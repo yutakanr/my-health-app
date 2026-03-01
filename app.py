@@ -47,10 +47,14 @@ if selected_user != "選択してください":
             motivation = st.slider("行動意欲", 1, 10, 5)
             total_performance = st.slider("総合実績", 1, 10, 5)
         
-        sleep_hours = st.slider("睡眠時間", 0.0, 12.0, 7.5, 0.5)
-        # 「食事内容」から「食生活」に変更
-        meal_info = st.text_input("食生活（朝・昼・晩、栄養バランスなど）")
-        memo = st.text_area("メモ")
+        # 食生活をスライダーに変更！
+        col_extra1, col_extra2 = st.columns(2)
+        with col_extra1:
+            diet_score = st.slider("食生活（栄養・量など）", 1, 10, 5)
+        with col_extra2:
+            sleep_hours = st.slider("睡眠時間", 0.0, 12.0, 7.5, 0.5)
+            
+        memo = st.text_area("メモ（食べたものや気づいたことなど）")
         submit = st.form_submit_button("保存する")
 
     # --- シートの読み込み/作成 ---
@@ -58,7 +62,6 @@ if selected_user != "選択してください":
         data = conn.read(spreadsheet=url, worksheet=target_sheet, ttl=0)
     except Exception:
         st.info(f"✨ 新しい月のシート「{target_sheet}」を作成するね！")
-        # 列名も「食生活」に統一
         columns = ["日付", "食生活", "就寝時間", "起床時間", "寝起き", "寝つき", "行動意欲", "気分", "体調", "総合実績", "睡眠時間", "メモ"]
         data = pd.DataFrame(columns=columns)
         conn.update(spreadsheet=url, worksheet=target_sheet, data=data)
@@ -66,7 +69,7 @@ if selected_user != "選択してください":
     if submit:
         new_row = pd.DataFrame([{
             "日付": str(date.today()), 
-            "食生活": meal_info, 
+            "食生活": diet_score, # スコアを保存
             "就寝時間": bedtime, 
             "起床時間": wakeup_time, 
             "寝起き": wake_up_score, 
@@ -89,18 +92,18 @@ if selected_user != "選択してください":
         st.subheader(f"📊 {current_month} の振り返り")
         
         graph_data = data.copy()
-        for col in ["総合実績", "行動意欲", "睡眠時間"]:
+        # グラフに表示する項目に「食生活」を追加
+        target_cols = ["総合実績", "行動意欲", "睡眠時間", "食生活"]
+        for col in target_cols:
             graph_data[col] = pd.to_numeric(graph_data[col], errors='coerce')
 
-        # グラフ用のデータ変形
         melted_data = graph_data.melt(
-            id_vars=["日付", "食生活"], 
-            value_vars=["総合実績", "行動意欲", "睡眠時間"],
+            id_vars=["日付", "メモ"], 
+            value_vars=target_cols,
             var_name="項目", 
             value_name="スコア"
         )
 
-        # グラフ設定（ツールチップも食生活に変更）
         chart = {
             "mark": {"type": "line", "point": True, "tooltip": True},
             "encoding": {
@@ -111,12 +114,12 @@ if selected_user != "選択してください":
                     "scale": {"domain": [0, 10]},
                     "axis": {"tickCount": 11, "title": "スコア / 時間"}
                 },
-                "color": {"field": "項目", "type": "nominal", "scale": {"range": ["#ff4b4b", "#00d4ff", "#1f77b4"]}},
+                "color": {"field": "項目", "type": "nominal", "scale": {"range": ["#ff4b4b", "#00d4ff", "#1f77b4", "#50C878"]}},
                 "tooltip": [
                     {"field": "日付", "type": "nominal"},
                     {"field": "項目", "type": "nominal"},
                     {"field": "スコア", "type": "quantitative"},
-                    {"field": "食生活", "type": "nominal"}
+                    {"field": "メモ", "type": "nominal"}
                 ]
             },
             "width": "container",
