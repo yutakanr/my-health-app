@@ -13,27 +13,38 @@ USER_DATA = {
 st.set_page_config(page_title="生活リズム・体調ログ", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- プルダウンを大きくするためのスタイル設定 ---
+# --- スタイル設定（中央寄せ・サイズ調整・見切れ防止） ---
 st.markdown("""
     <style>
+    /* プルダウンのフォントを大きく */
     div[data-baseweb="select"] {
-        font-size: 24px !important;
-    }
-    label[data-testid="stWidgetLabel"] p {
         font-size: 20px !important;
+    }
+    /* ラベルを大きく */
+    label[data-testid="stWidgetLabel"] p {
+        font-size: 22px !important;
         font-weight: bold;
+    }
+    /* 中央に寄せるためのコンテナ設定 */
+    .center-col {
+        display: flex;
+        justify-content: center;
     }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🛡️ 生活リズム・体調管理")
 
-# 1. ユーザー選択 (ラベルを大きく表示)
-selected_user = st.selectbox("👤 名前を選んでね", ["選択してください"] + list(USER_DATA.keys()))
+# 1. ユーザー選択（中央寄りに配置、横幅を少し短く）
+_, center_col, _ = st.columns([1, 2, 1])
+with center_col:
+    selected_user = st.selectbox("👤 ユーザーを選んでね", ["選択してください"] + list(USER_DATA.keys()))
 
 if selected_user != "選択してください":
     # 2. パスワード認証
-    password = st.text_input(f"{selected_user} のパスワードを入力してね", type="password")
+    _, pw_col, _ = st.columns([1, 2, 1])
+    with pw_col:
+        password = st.text_input(f"{selected_user} のパスワードを入力", type="password")
     
     if password == USER_DATA[selected_user]["pw"]:
         st.success(f"認証成功！こんにちは、{selected_user}さん。")
@@ -81,12 +92,12 @@ if selected_user != "選択してください":
             st.success("保存したよ！")
             st.rerun()
 
-        # --- 表にゴミ箱ボタンを追加 ---
+        # --- 表形式の履歴 + 一番右にゴミ箱 ---
         if not data.empty:
             st.divider()
             st.subheader(f"📊 {current_month} のデータ履歴")
 
-            # ヘッダー作成
+            # ヘッダー (列の幅を微調整)
             header_cols = st.columns([2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1])
             headers = ["日付", "食生活", "就寝", "起床", "寝起", "寝つ", "意欲", "気分", "体調", "実績", "メモ", "削除"]
             for col, h in zip(header_cols, headers):
@@ -95,23 +106,23 @@ if selected_user != "選択してください":
             # 各行のデータ表示
             for i, row in data.sort_index(ascending=False).iterrows():
                 row_cols = st.columns([2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1])
-                row_cols[0].write(row["日付"])
-                row_cols[1].write(row["食生活"])
-                row_cols[2].write(row["就寝時間"])
-                row_cols[3].write(row["起床時間"])
-                row_cols[4].write(row["寝起き"])
-                row_cols[5].write(row["寝つき"])
-                row_cols[6].write(row["行動意欲"])
-                row_cols[7].write(row["気分"])
-                row_cols[8].write(row["体調"])
-                row_cols[9].write(row["総合実績"])
-                row_cols[10].write(row["メモ"])
+                row_cols[0].write(row.get("日付", ""))
+                row_cols[1].write(row.get("食生活", ""))
+                row_cols[2].write(row.get("就寝時間", ""))
+                row_cols[3].write(row.get("起床時間", ""))
+                row_cols[4].write(row.get("寝起き", ""))
+                row_cols[5].write(row.get("寝つき", ""))
+                row_cols[6].write(row.get("行動意欲", ""))
+                row_cols[7].write(row.get("気分", ""))
+                row_cols[8].write(row.get("体調", ""))
+                row_cols[9].write(row.get("総合実績", ""))
+                row_cols[10].write(row.get("メモ", ""))
                 
-                # 一番右にゴミ箱ボタン
+                # 一番右に削除ボタン
                 if row_cols[11].button("🗑️", key=f"del_{i}"):
                     updated_data = data.drop(i)
                     conn.update(spreadsheet=url, worksheet=target_sheet, data=updated_data)
-                    st.warning(f"{row['日付']}のデータを削除したよ。")
+                    st.warning("削除完了")
                     st.rerun()
 
             # グラフ表示
