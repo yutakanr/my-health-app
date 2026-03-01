@@ -4,21 +4,26 @@ import pandas as pd
 from datetime import date
 
 # --- 設定 ---
-USER_LIST = ["ユーザーA", "ユーザーB", "ユーザーC"] 
+USER_DATA = {
+    "ユーザーA": "https://docs.google.com/spreadsheets/d/1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE/edit#gid=0",
+    "ユーザーB": "https://docs.google.com/spreadsheets/d/1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50/edit#gid=0",
+    "ユーザーC": "https://docs.google.com/spreadsheets/d/17LGbxNTbP4PO5N3dnTWsC-OTJB88u_dRBG-k8JOj0aw/edit#gid=0"
+}
+
 st.set_page_config(page_title="生活リズム・体調ログ", layout="wide")
-url = "https://docs.google.com/spreadsheets/d/1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE/edit#gid=0"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 st.title("🛡️ 生活リズム・体調管理")
 
 # 1. ユーザー選択
-selected_user = st.selectbox("名前を選んでね", ["選択してください"] + USER_LIST)
+selected_user = st.selectbox("名前を選んでね", ["選択してください"] + list(USER_DATA.keys()))
 
 if selected_user != "選択してください":
+    url = USER_DATA[selected_user]
     current_month = date.today().strftime("%Y-%m")
     target_sheet = f"{selected_user}_{current_month}"
 
-    # サイドバーに予定表示
+    # サイドバー：予定表
     with st.sidebar:
         st.header("⏰ 予定表")
         schedule = {"06:30": "起床・準備", "07:00": "外出", "13:00": "IT学習", "17:00": "筋トレ", "22:00": "就寝"}
@@ -43,34 +48,83 @@ if selected_user != "選択してください":
             total_performance = st.slider("総合実績", 1, 10, 5)
         
         sleep_hours = st.slider("睡眠時間", 0.0, 12.0, 7.5, 0.5)
+        # 「食事内容」から「食生活」に変更
+        meal_info = st.text_input("食生活（朝・昼・晩、栄養バランスなど）")
         memo = st.text_area("メモ")
         submit = st.form_submit_button("保存する")
 
-    # --- データの読み込みと表示 ---
+    # --- シートの読み込み/作成 ---
     try:
         data = conn.read(spreadsheet=url, worksheet=target_sheet, ttl=0)
-    except:
-        data = pd.DataFrame()
+    except Exception:
+        st.info(f"✨ 新しい月のシート「{target_sheet}」を作成するね！")
+        # 列名も「食生活」に統一
+        columns = ["日付", "食生活", "就寝時間", "起床時間", "寝起き", "寝つき", "行動意欲", "気分", "体調", "総合実績", "睡眠時間", "メモ"]
+        data = pd.DataFrame(columns=columns)
+        conn.update(spreadsheet=url, worksheet=target_sheet, data=data)
 
     if submit:
-        # (保存処理は前回と同じなので省略可ですが、一応簡略化して記載)
-        new_row = pd.DataFrame([{"日付": str(date.today()), "名前": selected_user, "就寝時間": bedtime, "起床時間": wakeup_time, "寝起き": wake_up_score, "寝つき": sleep_quality, "行動意欲": motivation, "気分": mood, "体調": condition, "総合実績": total_performance, "睡眠時間": sleep_hours, "メモ": memo}])
+        new_row = pd.DataFrame([{
+            "日付": str(date.today()), 
+            "食生活": meal_info, 
+            "就寝時間": bedtime, 
+            "起床時間": wakeup_time, 
+            "寝起き": wake_up_score, 
+            "寝つき": sleep_quality, 
+            "行動意欲": motivation, 
+            "気分": mood, 
+            "体調": condition, 
+            "総合実績": total_performance, 
+            "睡眠時間": sleep_hours, 
+            "メモ": memo
+        }])
         data = pd.concat([data, new_row], ignore_index=True)
         conn.update(spreadsheet=url, worksheet=target_sheet, data=data)
         st.success("保存したよ！")
-        st.rerun() # 画面を更新してグラフを出す
+        st.rerun()
 
-    # --- 削除ボタンの追加 ---
+    # --- 履歴とグラフ ---
     if not data.empty:
         st.divider()
-        st.subheader("🗑️ データの修正")
-        if st.button("最新の1件を削除する"):
-            data = data.drop(data.index[-1]) # 最後の行を消す
-            conn.update(spreadsheet=url, worksheet=target_sheet, data=data)
-            st.warning("最新のデータを削除したよ。")
-            st.rerun()
+        st.subheader(f"📊 {current_month} の振り返り")
+        
+        graph_data = data.copy()
+        for col in ["総合実績", "行動意欲", "睡眠時間"]:
+            graph_data[col] = pd.to_numeric(graph_data[col], errors='coerce')
 
-        # 履歴とグラフ
-        st.subheader("📊 今月の振り返り")
-        st.line_chart(data.set_index("日付")[["総合実績", "睡眠時間"]])
+        # グラフ用のデータ変形
+        melted_data = graph_data.melt(
+            id_vars=["日付", "食生活"], 
+            value_vars=["総合実績", "行動意欲", "睡眠時間"],
+            var_name="項目", 
+            value_name="スコア"
+        )
+
+        # グラフ設定（ツールチップも食生活に変更）
+        chart = {
+            "mark": {"type": "line", "point": True, "tooltip": True},
+            "encoding": {
+                "x": {"field": "日付", "type": "nominal", "axis": {"labelAngle": -45}},
+                "y": {
+                    "field": "スコア", 
+                    "type": "quantitative", 
+                    "scale": {"domain": [0, 10]},
+                    "axis": {"tickCount": 11, "title": "スコア / 時間"}
+                },
+                "color": {"field": "項目", "type": "nominal", "scale": {"range": ["#ff4b4b", "#00d4ff", "#1f77b4"]}},
+                "tooltip": [
+                    {"field": "日付", "type": "nominal"},
+                    {"field": "項目", "type": "nominal"},
+                    {"field": "スコア", "type": "quantitative"},
+                    {"field": "食生活", "type": "nominal"}
+                ]
+            },
+            "width": "container",
+            "height": 450,
+            "config": {
+                "selection": {"manual_zoom": {"type": "interval", "bind": "scales", "zoom": False, "translate": False}}
+            }
+        }
+        
+        st.vega_lite_chart(melted_data, chart, use_container_width=True)
         st.dataframe(data.sort_index(ascending=False))
