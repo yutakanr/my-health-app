@@ -23,6 +23,9 @@ if selected_user != "選択してください":
     current_month = date.today().strftime("%Y-%m")
     target_sheet = f"{selected_user}_{current_month}"
 
+    # --- スプレッドシートを開くボタンを追加 ---
+    st.link_button(f"📊 {selected_user} のスプレッドシートを開く", url)
+
     # サイドバー：予定表
     with st.sidebar:
         st.header("⏰ 予定表")
@@ -47,7 +50,6 @@ if selected_user != "選択してください":
             motivation = st.slider("行動意欲", 1, 10, 5)
             total_performance = st.slider("総合実績", 1, 10, 5)
         
-        # 食生活をスライダーに変更！
         col_extra1, col_extra2 = st.columns(2)
         with col_extra1:
             diet_score = st.slider("食生活（栄養・量など）", 1, 10, 5)
@@ -69,7 +71,7 @@ if selected_user != "選択してください":
     if submit:
         new_row = pd.DataFrame([{
             "日付": str(date.today()), 
-            "食生活": diet_score, # スコアを保存
+            "食生活": diet_score,
             "就寝時間": bedtime, 
             "起床時間": wakeup_time, 
             "寝起き": wake_up_score, 
@@ -92,7 +94,6 @@ if selected_user != "選択してください":
         st.subheader(f"📊 {current_month} の振り返り")
         
         graph_data = data.copy()
-        # グラフに表示する項目に「食生活」を追加
         target_cols = ["総合実績", "行動意欲", "睡眠時間", "食生活"]
         for col in target_cols:
             graph_data[col] = pd.to_numeric(graph_data[col], errors='coerce')
