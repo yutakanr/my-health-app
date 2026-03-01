@@ -13,10 +13,23 @@ USER_DATA = {
 st.set_page_config(page_title="生活リズム・体調ログ", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# --- プルダウンを大きくするためのスタイル設定 ---
+st.markdown("""
+    <style>
+    div[data-baseweb="select"] {
+        font-size: 24px !important;
+    }
+    label[data-testid="stWidgetLabel"] p {
+        font-size: 20px !important;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("🛡️ 生活リズム・体調管理")
 
-# 1. ユーザー選択
-selected_user = st.selectbox("名前を選んでね", ["選択してください"] + list(USER_DATA.keys()))
+# 1. ユーザー選択 (ラベルを大きく表示)
+selected_user = st.selectbox("👤 名前を選んでね", ["選択してください"] + list(USER_DATA.keys()))
 
 if selected_user != "選択してください":
     # 2. パスワード認証
@@ -68,30 +81,42 @@ if selected_user != "選択してください":
             st.success("保存したよ！")
             st.rerun()
 
-        # --- 履歴と削除機能 ---
+        # --- 表にゴミ箱ボタンを追加 ---
         if not data.empty:
             st.divider()
-            st.subheader("🗑️ データの管理（削除）")
-            
-            # 削除ボタン付きの表を表示するために、各行にボタンを配置
+            st.subheader(f"📊 {current_month} のデータ履歴")
+
+            # ヘッダー作成
+            header_cols = st.columns([2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1])
+            headers = ["日付", "食生活", "就寝", "起床", "寝起", "寝つ", "意欲", "気分", "体調", "実績", "メモ", "削除"]
+            for col, h in zip(header_cols, headers):
+                col.write(f"**{h}**")
+
+            # 各行のデータ表示
             for i, row in data.sort_index(ascending=False).iterrows():
-                cols = st.columns([1, 8, 1])
-                with cols[0]:
-                    st.write(f"**{row['日付']}**")
-                with cols[1]:
-                    st.write(f"実績:{row['総合実績']} / 意欲:{row['行動意欲']} / メモ:{row['メモ']}")
-                with cols[2]:
-                    # 削除ボタン
-                    if st.button("🗑️", key=f"del_{i}"):
-                        # 指定した行以外を残して更新
-                        updated_data = data.drop(i)
-                        conn.update(spreadsheet=url, worksheet=target_sheet, data=updated_data)
-                        st.warning(f"{row['日付']}のデータを削除したよ。")
-                        st.rerun()
+                row_cols = st.columns([2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1])
+                row_cols[0].write(row["日付"])
+                row_cols[1].write(row["食生活"])
+                row_cols[2].write(row["就寝時間"])
+                row_cols[3].write(row["起床時間"])
+                row_cols[4].write(row["寝起き"])
+                row_cols[5].write(row["寝つき"])
+                row_cols[6].write(row["行動意欲"])
+                row_cols[7].write(row["気分"])
+                row_cols[8].write(row["体調"])
+                row_cols[9].write(row["総合実績"])
+                row_cols[10].write(row["メモ"])
+                
+                # 一番右にゴミ箱ボタン
+                if row_cols[11].button("🗑️", key=f"del_{i}"):
+                    updated_data = data.drop(i)
+                    conn.update(spreadsheet=url, worksheet=target_sheet, data=updated_data)
+                    st.warning(f"{row['日付']}のデータを削除したよ。")
+                    st.rerun()
 
             # グラフ表示
             st.divider()
-            st.subheader(f"📊 {current_month} のグラフ")
+            st.subheader(f"📈 月間グラフ")
             graph_data = data.copy()
             target_cols = ["総合実績", "行動意欲", "睡眠時間", "食生活"]
             for col in target_cols:
