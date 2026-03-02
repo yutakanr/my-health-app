@@ -9,7 +9,6 @@ USER_DATA = {
         "id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", 
         "pw": "yusuke", # 基本ログイン
         "weight_pw": st.secrets["passwords"]["user_a_weight"] # 体重専用
-        
     },
     "ユーザーB": {
         "id": "1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50", 
@@ -57,6 +56,10 @@ if selected_user != "選択してください":
         current_month = date.today().strftime("%Y-%m")
         target_sheet = f"{current_month}"
 
+        # --- 管理用リンク（復活！） ---
+        st.link_button("🔗 管理用：Googleスプレッドシートを開く", url)
+        st.caption("※開いた先の『共有』ボタンから、サービスアカウントを『編集者』に設定してね！")
+
         # 画面切り替えボタン
         st.divider()
         col_btn1, col_btn2 = st.columns(2)
@@ -73,6 +76,7 @@ if selected_user != "選択してください":
         except Exception:
             columns = ["日付", "体重", "食生活", "就寝時間", "起床時間", "寝起き", "寝つき", "行動意欲", "気分", "体調", "総合実績", "睡眠時間", "メモ"]
             data = pd.DataFrame(columns=columns)
+            # 初回シート作成
             conn.update(spreadsheet=url, worksheet=target_sheet, data=data)
 
         # --- 【体重管理画面】 ---
