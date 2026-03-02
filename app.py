@@ -9,6 +9,7 @@ USER_DATA = {
         "id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", 
         "pw": "yusuke", # 基本ログイン
         "weight_pw": st.secrets["passwords"]["user_a_weight"] # 体重専用
+        
     },
     "ユーザーB": {
         "id": "1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50", 
