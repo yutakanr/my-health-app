@@ -16,7 +16,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # プルダウン用の選択肢
 TIME_OPTIONS = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
-SLEEP_OPTIONS = [float(i/2) for i in range(49)] # 0.5刻み
+SLEEP_OPTIONS = [float(i/2) for i in range(49)] 
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "view_mode" not in st.session_state: st.session_state.view_mode = "main"
@@ -36,7 +36,6 @@ if not st.session_state.logged_in:
 else:
     user = st.session_state.current_user
     sheet_id = USER_DATA[user]["id"]
-    # スプレッドシートのURLを作成
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
     t_sheet = date.today().strftime("%Y-%m")
     w_sheet = f"W_{t_sheet}"
@@ -48,14 +47,13 @@ else:
         except: return pd.DataFrame()
 
     c1, c2, c3 = st.columns([2, 2, 1])
-    if c1.button("📝 日報入力・推移"): st.session_state.view_mode = "main"
-    if c2.button("⚖️ 体重管理画面"): st.session_state.view_mode = "weight"
+    if c1.button("📝 日報入力・推移"): st.session_state.view_mode = "main"; st.rerun()
+    if c2.button("⚖️ 体重管理画面"): st.session_state.view_mode = "weight"; st.rerun()
     if c3.button("🚪 ログアウト"):
         st.session_state.logged_in = False
         st.session_state.weight_auth = False
         st.rerun()
 
-    # スプレッドシート閲覧用リンクを表示
     st.markdown(f"🔗 [Googleスプレッドシートで直接確認する]({url})")
     st.divider()
 
@@ -84,20 +82,27 @@ else:
     # --- 4. メイン画面 ---
     else:
         data = load(t_sheet)
+        
+        # 📊 グラフ表示
         if not data.empty:
             st.subheader("📊 生活リズム推移")
             chart_df = data.copy()
-            for c in ["総合実績", "睡眠時間", "行動意欲", "食生活"]:
-                if c in chart_df.columns: chart_df[c] = pd.to_numeric(chart_df[c], errors='coerce').fillna(0)
+            # エラー回避のため、必要な列がない場合は作成し、数値変換
+            for col in ["総合実績", "睡眠時間", "行動意欲", "食生活"]:
+                if col not in chart_df.columns:
+                    chart_df[col] = 0
+                chart_df[col] = pd.to_numeric(chart_df[col], errors='coerce').fillna(0)
             
             base = alt.Chart(chart_df).encode(x=alt.X('日付:T', axis=alt.Axis(format='%m/%d', tickCount='day')))
-            l_tot = base.mark_line(strokeWidth=5, color='red').encode(y=alt.Y('総合実績:Q', title='スコア'))
-            l_slp = base.mark_line(strokeWidth=2, color='blue', opacity=0.7).encode(y='睡眠時間:Q')
-            l_mot = base.mark_line(strokeWidth=2, color='orange', opacity=0.7).encode(y='行動意欲:Q')
-            l_fod = base.mark_line(strokeWidth=2, color='green', opacity=0.7).encode(y='食生活:Q')
-            st.altair_chart(l_tot + l_slp + l_mot + l_fod, use_container_width=True)
-            st.caption("🔴総合(太) 🔵睡眠 🟠意欲 🟢食生活")
+            line_total = base.mark_line(strokeWidth=5, color='red').encode(y=alt.Y('総合実績:Q', title='スコア'))
+            line_sleep = base.mark_line(strokeWidth=2, color='blue', opacity=0.7).encode(y='睡眠時間:Q')
+            line_moti = base.mark_line(strokeWidth=2, color='orange', opacity=0.7).encode(y='行動意欲:Q')
+            line_food = base.mark_line(strokeWidth=2, color='green', opacity=0.7).encode(y='食生活:Q')
+            
+            st.altair_chart(line_total + line_sleep + line_moti + line_food, use_container_width=True)
+            st.caption("🔴総合実績(太)  🔵睡眠  🟠意欲  🟢食生活")
 
+        # 📝 入力フォーム
         with st.form("input_form"):
             st.subheader("📝 今日の記録")
             col1, col2, col3 = st.columns(3)
@@ -107,32 +112,44 @@ else:
                 w_dt = datetime.strptime(wake_t, "%H:%M")
                 b_dt = datetime.strptime(bed_t, "%H:%M")
                 if w_dt < b_dt: w_dt += timedelta(days=1)
-                calc_v = (w_dt - b_dt).seconds / 3600
-                sleep_hr = st.selectbox("睡眠時間 (修正可)", SLEEP_OPTIONS, index=int(calc_v * 2))
-                food = st.slider("食生活", 1, 10, 5)
+                calc_val = (w_dt - b_dt).seconds / 3600
+                sleep_hr = st.selectbox("睡眠時間 (修正可)", SLEEP_OPTIONS, index=int(calc_val * 2))
+                total = st.slider("総合実績", 1, 10, 5) # 順番入れ替え
+                
             with col2:
                 s_q = st.slider("寝つき", 1, 10, 5)
                 w_s = st.slider("寝起き", 1, 10, 5)
                 cond = st.slider("体調", 1, 10, 5)
             with col3:
                 moti = st.slider("行動意欲", 1, 10, 5)
-                total = st.slider("総合実績", 1, 10, 5)
-                weight = st.slider("体重 (kg)", 40.0, 120.0, 65.0, 0.1)
+                food = st.slider("食生活", 1, 10, 5) # 順番入れ替え
+                weight = st.slider("今日の体重 (kg)", 40.0, 120.0, 65.0, 0.1)
+            
             memo = st.text_area("メモ")
             
             if st.form_submit_button("保存する"):
                 today = str(date.today())
-                new_m = pd.DataFrame([{"日付": today, "起床時間": wake_t, "就寝時間": bed_t, "睡眠時間": sleep_hr, "寝つき": s_q, "寝起き": w_s, "体調": cond, "行動意欲": moti, "総合実績": total, "食生活": food, "メモ": memo}])
+                new_m = pd.DataFrame([{
+                    "日付": today, "起床時間": wake_t, "就寝時間": bed_t, "睡眠時間": sleep_hr,
+                    "寝つき": s_q, "寝起き": w_s, "体調": cond, "行動意欲": moti,
+                    "総合実績": total, "食生活": food, "メモ": memo
+                }])
                 conn.update(spreadsheet=url, worksheet=t_sheet, data=pd.concat([data, new_m], ignore_index=True))
-                w_d_c = load(w_sheet)
-                conn.update(spreadsheet=url, worksheet=w_sheet, data=pd.concat([w_d_c, pd.DataFrame([{"日付": today, "体重": weight}])], ignore_index=True))
-                st.success("保存完了！"); st.rerun()
+                # 体重も保存
+                w_data_c = load(w_sheet)
+                conn.update(spreadsheet=url, worksheet=w_sheet, data=pd.concat([w_data_c, pd.DataFrame([{"日付": today, "体重": weight}])], ignore_index=True))
+                st.success("保存しました！"); st.rerun()
 
+        # 📋 履歴一覧
         if not data.empty:
             st.subheader("📋 履歴一覧")
-            display_cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "行動意欲", "総合実績", "食生活", "メモ"]
+            # 表示する列の順番を指定（総合実績と食生活を入れ替え）
+            display_cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "行動意欲", "食生活", "総合実績", "メモ"]
+            # 実際にデータに存在する列だけを抽出（KeyError対策）
             existing_cols = [c for c in display_cols if c in data.columns]
+            
             edited_df = st.data_editor(data[existing_cols], num_rows="dynamic", key="main_edit", use_container_width=True)
+            
             if st.button("表の修正を保存"):
                 conn.update(spreadsheet=url, worksheet=t_sheet, data=edited_df)
                 st.success("更新しました！"); st.rerun()
