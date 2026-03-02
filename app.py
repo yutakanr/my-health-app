@@ -1,10 +1,3 @@
-スプレッドシートのリンクも追加したよ！
-ログインした後に、入力フォームのすぐ上で「🔗 Googleスプレッドシートで直接確認する」というリンクが出るようにしたから、そこからワンクリックでシートに飛べるよ。
-
-GitHubの app.py をこのコードに書き換えてね。
-
-🛠️ 【最新・リンク追加版】app.py
-Python
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
