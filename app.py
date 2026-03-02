@@ -5,13 +5,10 @@ from datetime import date, datetime, timedelta
 import altair as alt
 
 # --- 1. Settings ---
-# ユーザーAのみに制限し、pw（最初のログイン）とweight_pw（体重画面）を同じに設定
 USER_DATA = {
-    "ユーザーA": {
-        "id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", 
-        "pw": st.secrets["passwords"]["user_a_weight"], # 体重用パスワードを最初のログインにも使用
-        "weight_pw": st.secrets["passwords"]["user_a_weight"]
-    }
+    "ユーザーA": {"id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", "pw": "yusuke", "weight_pw": st.secrets["passwords"]["user_a_weight"]},
+    "ユーザーB": {"id": "1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50", "pw": "katsumi", "weight_pw": st.secrets["passwords"]["user_b_weight"]},
+    "ユーザーC": {"id": "1KXm3qm_LzScn74-x0FUUoiyFotYGFfBzfv9b_jEboE4", "pw": "noriko", "weight_pw": st.secrets["passwords"]["user_c_weight"]}
 }
 
 st.set_page_config(page_title="My Health Log", layout="wide")
@@ -23,24 +20,21 @@ SLEEP_OPTIONS = [float(i/2) for i in range(49)]
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "view_mode" not in st.session_state: st.session_state.view_mode = "main"
-if "weight_auth" not in st.session_state: st.session_state.weight_auth = False
+if "extra_auth" not in st.session_state: st.session_state.extra_auth = False # ユーザーA専用の追加認証
 
-# --- 2. Login (ユーザーAのみ。認証されないと何も表示されない) ---
+# --- 2. 最初のログイン (全ユーザー共通) ---
 if not st.session_state.logged_in:
-    st.title("🛡️ ユーザーA専用ログイン")
-    # ユーザー選択を固定
-    user_key = "ユーザーA"
-    pw = st.text_input("パスワードを入力してください", type="password")
-    
+    st.title("🛡️ ログイン")
+    user_choice = st.selectbox("👤 ユーザー選択", ["選択してください"] + list(USER_DATA.keys()))
+    pw_input = st.text_input("基本パスワードを入力", type="password")
     if st.button("ログイン"):
-        if pw == USER_DATA[user_key]["pw"]:
+        if user_choice != "選択してください" and pw_input == USER_DATA[user_choice]["pw"]:
             st.session_state.logged_in = True
-            st.session_state.current_user = user_key
+            st.session_state.current_user = user_choice
             st.rerun()
-        else:
-            st.error("パスワードが正しくありません")
+        else: st.error("パスワードが違います")
 
-# --- ログイン成功後の表示 ---
+# --- ログイン成功後のメイン表示 ---
 else:
     user = st.session_state.current_user
     sheet_id = USER_DATA[user]["id"]
@@ -64,23 +58,37 @@ else:
         st.rerun()
     if c3.button("🚪 ログアウト"):
         st.session_state.logged_in = False
-        st.session_state.weight_auth = False
+        st.session_state.extra_auth = False
         st.rerun()
 
     st.info(f"ログイン中: {user}")
-    st.markdown(f"🔗 [Googleスプレッドシートで直接確認する]({url})")
-    st.divider()
 
-    # --- 3. 体重管理画面 (ここでも同じパスワードが必要) ---
-    if st.session_state.view_mode == "weight":
-        st.subheader("⚖️ 体重モニタリング")
-        if not st.session_state.weight_auth:
-            w_pw = st.text_input("確認のため、もう一度パスワードを入力", type="password")
-            if st.button("体重画面を表示"):
-                if w_pw == USER_DATA[user]["weight_pw"]:
-                    st.session_state.weight_auth = True
+    # --- 【重要】ユーザーAのみスプレッドシート表示にもパスワードをかける ---
+    if user == "ユーザーA":
+        if not st.session_state.extra_auth:
+            st.warning("⚠️ ユーザーAは追加認証が必要です（体重・シート表示用）")
+            check_pw = st.text_input("専用パスワードを入力", type="password", key="extra_auth_key")
+            if st.button("認証する"):
+                if check_pw == USER_DATA[user]["weight_pw"]:
+                    st.session_state.extra_auth = True
+                    st.success("認証成功！")
                     st.rerun()
                 else: st.error("パスワードが違います")
+        else:
+            st.markdown(f"🔗 [Googleスプレッドシートで直接確認する]({url})")
+    else:
+        # A以外はそのままリンクを表示
+        st.markdown(f"🔗 [Googleスプレッドシートで直接確認する]({url})")
+
+    st.divider()
+
+    # --- 3. 体重管理画面 (ユーザーAのみ認証必須) ---
+    if st.session_state.view_mode == "weight":
+        st.subheader("⚖️ 体重モニタリング")
+        
+        # ユーザーAで、かつ認証がまだの場合は表示しない
+        if user == "ユーザーA" and not st.session_state.extra_auth:
+            st.error("上の入力欄で専用パスワードを入力してください。")
         else:
             w_data = load(w_sheet)
             if not w_data.empty and "体重" in w_data.columns:
@@ -93,7 +101,7 @@ else:
                 st.data_editor(w_data, num_rows="dynamic", key="edit_w", use_container_width=True)
             else: st.info("データがありません")
 
-    # --- 4. メイン画面 ---
+    # --- 4. メイン画面 (ここは誰でも見れる) ---
     else:
         data = load(t_sheet)
         if not data.empty:
