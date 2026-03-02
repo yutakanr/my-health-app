@@ -28,8 +28,7 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.current_user = user
             st.rerun()
-        else:
-            st.error("パスワードが違います")
+        else: st.error("パスワードが違います")
 else:
     user = st.session_state.current_user
     sheet_id = USER_DATA[user]["id"]
@@ -51,7 +50,6 @@ else:
         st.session_state.weight_auth = False
         st.rerun()
 
-    # スプレッドシート閲覧用リンク
     st.markdown(f"🔗 [Googleスプレッドシートで直接確認する]({url})")
     st.divider()
 
@@ -67,83 +65,77 @@ else:
                 else: st.error("パスワードが違います")
         else:
             w_data = load(w_sheet)
-            if not w_data.empty:
+            if not w_data.empty and "体重" in w_data.columns:
                 df_w = w_data.copy()
                 df_w["体重"] = pd.to_numeric(df_w["体重"], errors='coerce')
                 chart = alt.Chart(df_w).mark_line(point=True).encode(
-                    x='日付:T', y=alt.Y('体重:Q', scale=alt.Scale(domain=[0, 100])), tooltip=['日付', '体重']
+                    x='日付:T', y=alt.Y('体重:Q', scale=alt.Scale(domain=[min(df_w["体重"].dropna())-2, max(df_w["体重"].dropna())+2])), tooltip=['日付', '体重']
                 ).interactive()
                 st.altair_chart(chart, use_container_width=True)
                 
-                st.info("🗑️ 行の左端をクリックして選択し、Deleteキーで削除できます。")
                 edited_w = st.data_editor(w_data, num_rows="dynamic", key="edit_w", use_container_width=True)
                 if st.button("体重データを保存・更新"):
                     conn.update(spreadsheet=url, worksheet=w_sheet, data=edited_w)
                     st.success("更新しました！")
             else: st.info("データがありません")
 
-    # --- 4. メメイン画面 ---
+    # --- 4. メイン画面 ---
     else:
         data = load(t_sheet)
         with st.form("input_form"):
             st.subheader("📝 今日の記録")
             col1, col2, col3 = st.columns(3)
             with col1:
-                bed = st.text_input("就寝時間", "22:00")
                 wake = st.text_input("起床時間", "06:30")
-                food = st.slider("食生活", 1, 10, 5)
+                bed = st.text_input("就寝時間", "22:00")
+                sleep_hr = st.number_input("睡眠時間", 0.0, 24.0, 7.0, 0.5)
             with col2:
-                w_s = st.slider("寝起き", 1, 10, 5)
                 s_q = st.slider("寝つき", 1, 10, 5)
-            with col3:
+                w_s = st.slider("寝起き", 1, 10, 5)
                 cond = st.slider("体調", 1, 10, 5)
+            with col3:
                 moti = st.slider("行動意欲", 1, 10, 5)
                 total = st.slider("総合実績", 1, 10, 5)
+                weight = st.number_input("体重 (kg) ※任意", 0.0, 150.0, 0.0, 0.1)
             
-            # 体重をスライダー（棒線）入力に変更
-            weight = st.slider("体重 (kg)", 0.0, 100.0, 60.0, 0.1)
             memo = st.text_area("メモ")
             
             if st.form_submit_button("この内容で保存する"):
                 try:
                     today = str(date.today())
-                    new_m = pd.DataFrame([{"日付":today, "食生活":food, "就寝時間":bed, "起床時間":wake, "寝起き":w_s, "寝つき":s_q, "行動意欲":moti, "気分":5, "体調":cond, "総合実績":total, "睡眠時間":7.0, "メモ":memo}])
+                    # 画像の項目名に完全一致
+                    new_m = pd.DataFrame([{
+                        "日付": today, "起床時間": wake, "就寝時間": bed, "睡眠時間": sleep_hr,
+                        "寝つき": s_q, "寝起き": w_s, "体調": cond, "行動意欲": moti,
+                        "総合実績": total, "メモ": memo
+                    }])
                     conn.update(spreadsheet=url, worksheet=t_sheet, data=pd.concat([data, new_m], ignore_index=True))
-                    w_data_c = load(w_sheet)
-                    new_w = pd.DataFrame([{"日付":today, "体重":weight}])
-                    conn.update(spreadsheet=url, worksheet=w_sheet, data=pd.concat([w_data_c, new_w], ignore_index=True))
+                    
+                    if weight > 0:
+                        w_data_c = load(w_sheet)
+                        new_w = pd.DataFrame([{"日付": today, "体重": weight}])
+                        conn.update(spreadsheet=url, worksheet=w_sheet, data=pd.concat([w_data_c, new_w], ignore_index=True))
                     st.success("保存完了！"); st.rerun()
-                except: st.error("保存失敗")
+                except Exception as e:
+                    st.error(f"保存失敗: {e}")
 
         if not data.empty:
             st.divider()
             st.subheader("📊 生活リズム推移")
-            # カスタムグラフ：総合実績を赤色・太線にする
             chart_df = data.copy()
-            for c in ["総合実績", "睡眠時間", "食生活", "行動意欲"]:
-                chart_df[c] = pd.to_numeric(chart_df[c], errors='coerce')
+            for c in ["総合実績", "睡眠時間", "体調", "行動意欲"]:
+                if c in chart_df.columns:
+                    chart_df[c] = pd.to_numeric(chart_df[c], errors='coerce')
             
-            # Altairで詳細なグラフ作成
             base = alt.Chart(chart_df).encode(x='日付:T')
-            line1 = base.mark_line(strokeWidth=4, color='red').encode(y='総合実績:Q', tooltip=['日付', '総合実績'])
-            line2 = base.mark_line(opacity=0.5).encode(y='睡眠時間:Q', color=alt.value('blue'))
-            line3 = base.mark_line(opacity=0.5).encode(y='食生活:Q', color=alt.value('green'))
-            line4 = base.mark_line(opacity=0.5).encode(y='行動意欲:Q', color=alt.value('orange'))
-            st.altair_chart(line1 + line2 + line3 + line4, use_container_width=True)
+            l1 = base.mark_line(strokeWidth=4, color='red').encode(y=alt.Y('総合実績:Q', title='値'))
+            l2 = base.mark_line(opacity=0.4, color='blue').encode(y='睡眠時間:Q')
+            st.altair_chart(l1 + l2, use_container_width=True)
 
-            st.subheader("📋 履歴一覧（編集・削除）")
-            st.info("💡 左端の番号をクリックして選択状態にし、Deleteキーを押すと行を削除できます。")
-            display_cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "行動意欲", "メモ"]
+            st.subheader("📋 履歴一覧")
+            display_cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "行動意欲", "総合実績", "メモ"]
             existing_cols = [c for c in display_cols if c in data.columns]
-            
-            # エラー防止のため、全データを読み込んでエディタに渡す
             edited_df = st.data_editor(data[existing_cols], num_rows="dynamic", key="main_edit", use_container_width=True)
             
-            if st.button("修正・削除を反映してスプレッドシートを更新"):
-                try:
-                    # エディタの内容をスプレッドシートに上書き（元の列構成を壊さないよう注意）
-                    conn.update(spreadsheet=url, worksheet=t_sheet, data=edited_df)
-                    st.success("スプレッドシートを更新しました！")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"更新エラー: {e}")
+            if st.button("修正・削除を反映"):
+                conn.update(spreadsheet=url, worksheet=t_sheet, data=edited_df)
