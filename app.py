@@ -20,9 +20,9 @@ SLEEP_OPTIONS = [float(i/2) for i in range(49)]
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "view_mode" not in st.session_state: st.session_state.view_mode = "main"
-if "extra_auth" not in st.session_state: st.session_state.extra_auth = False # ユーザーA専用の追加認証
+if "extra_auth" not in st.session_state: st.session_state.extra_auth = False 
 
-# --- 2. 最初のログイン (全ユーザー共通) ---
+# --- 2. ログイン ---
 if not st.session_state.logged_in:
     st.title("🛡️ ログイン")
     user_choice = st.selectbox("👤 ユーザー選択", ["選択してください"] + list(USER_DATA.keys()))
@@ -34,7 +34,6 @@ if not st.session_state.logged_in:
             st.rerun()
         else: st.error("パスワードが違います")
 
-# --- ログイン成功後のメイン表示 ---
 else:
     user = st.session_state.current_user
     sheet_id = USER_DATA[user]["id"]
@@ -48,14 +47,9 @@ else:
             return df if df is not None else pd.DataFrame()
         except: return pd.DataFrame()
 
-    # --- ナビゲーション ---
     c1, c2, c3 = st.columns([2, 2, 1])
-    if c1.button("📝 日報入力・推移"): 
-        st.session_state.view_mode = "main"
-        st.rerun()
-    if c2.button("⚖️ 体重管理画面"): 
-        st.session_state.view_mode = "weight"
-        st.rerun()
+    if c1.button("📝 日報入力・推移"): st.session_state.view_mode = "main"; st.rerun()
+    if c2.button("⚖️ 体重管理画面"): st.session_state.view_mode = "weight"; st.rerun()
     if c3.button("🚪 ログアウト"):
         st.session_state.logged_in = False
         st.session_state.extra_auth = False
@@ -63,30 +57,26 @@ else:
 
     st.info(f"ログイン中: {user}")
 
-    # --- 【重要】ユーザーAのみスプレッドシート表示にもパスワードをかける ---
+    # ユーザーA専用の追加認証（スプレッドシート・体重用）
     if user == "ユーザーA":
         if not st.session_state.extra_auth:
-            st.warning("⚠️ ユーザーAは追加認証が必要です（体重・シート表示用）")
-            check_pw = st.text_input("専用パスワードを入力", type="password", key="extra_auth_key")
+            st.warning("⚠️ 追加認証が必要です")
+            check_pw = st.text_input("専用パスワードを入力", type="password")
             if st.button("認証する"):
                 if check_pw == USER_DATA[user]["weight_pw"]:
                     st.session_state.extra_auth = True
-                    st.success("認証成功！")
                     st.rerun()
                 else: st.error("パスワードが違います")
         else:
             st.markdown(f"🔗 [Googleスプレッドシートで直接確認する]({url})")
     else:
-        # A以外はそのままリンクを表示
         st.markdown(f"🔗 [Googleスプレッドシートで直接確認する]({url})")
 
     st.divider()
 
-    # --- 3. 体重管理画面 (ユーザーAのみ認証必須) ---
+    # --- 3. 体重管理画面 ---
     if st.session_state.view_mode == "weight":
         st.subheader("⚖️ 体重モニタリング")
-        
-        # ユーザーAで、かつ認証がまだの場合は表示しない
         if user == "ユーザーA" and not st.session_state.extra_auth:
             st.error("上の入力欄で専用パスワードを入力してください。")
         else:
@@ -101,7 +91,7 @@ else:
                 st.data_editor(w_data, num_rows="dynamic", key="edit_w", use_container_width=True)
             else: st.info("データがありません")
 
-    # --- 4. メイン画面 (ここは誰でも見れる) ---
+    # --- 4. メイン画面 ---
     else:
         data = load(t_sheet)
         if not data.empty:
@@ -129,6 +119,8 @@ else:
                 b_dt = datetime.strptime(bed_t, "%H:%M")
                 if w_dt < b_dt: w_dt += timedelta(days=1)
                 calc_v = (w_dt - b_dt).seconds / 3600
+                
+                # 計算結果を初期値にしたプルダウン
                 sleep_hr = st.selectbox("睡眠時間 (修正可)", SLEEP_OPTIONS, index=int(calc_v * 2))
                 total = st.slider("総合実績", 1, 10, 5)
             with col2:
@@ -143,8 +135,16 @@ else:
             
             if st.form_submit_button("保存する"):
                 today = str(date.today())
-                new_m = pd.DataFrame([{"日付": today, "起床時間": wake_t, "就寝時間": bed_t, "睡眠時間": sleep_hr, "寝つき": s_q, "寝起き": w_s, "体調": cond, "行動意欲": moti, "総合実績": total, "食生活": food, "メモ": memo}])
+                # 【重要】睡眠時間が9時間を超える場合は9にする
+                final_sleep = sleep_hr if sleep_hr <= 9.0 else 9.0
+                
+                new_m = pd.DataFrame([{
+                    "日付": today, "起床時間": wake_t, "就寝時間": bed_t, "睡眠時間": final_sleep,
+                    "寝つき": s_q, "寝起き": w_s, "体調": cond, "行動意欲": moti,
+                    "総合実績": total, "食生活": food, "メモ": memo
+                }])
                 conn.update(spreadsheet=url, worksheet=t_sheet, data=pd.concat([data, new_m], ignore_index=True))
+                
                 w_d_c = load(w_sheet)
                 conn.update(spreadsheet=url, worksheet=w_sheet, data=pd.concat([w_d_c, pd.DataFrame([{"日付": today, "体重": weight}])], ignore_index=True))
                 st.success("保存完了！"); st.rerun()
@@ -155,5 +155,8 @@ else:
             existing_cols = [c for c in display_cols if c in data.columns]
             edited_df = st.data_editor(data[existing_cols], num_rows="dynamic", key="main_edit", use_container_width=True)
             if st.button("表の修正を保存"):
+                # 表で直接編集した時も9時間超えを9に丸める処理（任意）
+                if "睡眠時間" in edited_df.columns:
+                    edited_df["睡眠時間"] = pd.to_numeric(edited_df["睡眠時間"], errors='coerce').apply(lambda x: min(x, 9.0) if pd.notnull(x) else x)
                 conn.update(spreadsheet=url, worksheet=t_sheet, data=edited_df)
                 st.success("更新しました！"); st.rerun()
