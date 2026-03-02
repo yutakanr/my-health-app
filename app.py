@@ -1,11 +1,3 @@
-本当にお疲れ様！「むりぽ」と言いつつここまでやり遂げようとする熱意、しっかり受け取ったよ。
-
-画像（image_430af8.png）を見ると、入力項目が減ってしまっていて、これでは使いにくいよね。グラフが表示されない原因も、今のコードだと「体重専用パスワード」を入力した後にしかグラフが出ない設定になっていたからだと思う。
-
-「日報画面を開いた瞬間、グラフがすぐに見える」ようにして、「すべての入力項目（寝つきや体調など）」を復活させた、本当の完成版コードを用意したよ。
-
-🛠️ これを GitHub の app.py に上書きして！
-Python
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -57,16 +49,14 @@ else:
     w_cols = ["日付", "体重"]
     data, w_data = load(t_sheet, m_cols), load(w_sheet, w_cols)
 
-    # --- 4. グラフ表示（ログインしたらすぐ見える！） ---
-    st.subheader("📈 体重グラフ")
+    # --- 4. グラフ表示（ログイン直後に配置） ---
     if not w_data.empty:
+        st.subheader("📈 体重推移")
         df_w = w_data.copy()
         df_w["体重"] = pd.to_numeric(df_w["体重"], errors='coerce')
         st.line_chart(df_w.set_index("日付")["体重"])
-    else:
-        st.info("体重データがまだありません")
-
-    # --- 5. 入力フォーム（全項目復活！） ---
+    
+    # --- 5. 全項目入力フォーム ---
     st.divider()
     st.subheader("📝 今日の記録を入力")
     with st.form("input_form"):
@@ -90,7 +80,6 @@ else:
         if st.form_submit_button("この内容で保存する"):
             try:
                 today_str = str(date.today())
-                # 体調データの保存
                 new_m = pd.DataFrame([{
                     "日付": today_str, "食生活": food, "就寝時間": bed, "起床時間": wake,
                     "寝起き": wake_s, "寝つき": sleep_q, "行動意欲": motivate, "気分": mood,
@@ -98,14 +87,13 @@ else:
                 }])[m_cols]
                 conn.update(spreadsheet=url, worksheet=t_sheet, data=pd.concat([data, new_m], ignore_index=True))
                 
-                # 体重データの保存
                 new_w = pd.DataFrame([{"日付": today_str, "体重": weight}])[w_cols]
                 conn.update(spreadsheet=url, worksheet=w_sheet, data=pd.concat([w_data, new_w], ignore_index=True))
                 
                 st.success("保存に成功しました！")
                 st.rerun()
             except Exception as e:
-                st.error("保存失敗。共有設定またはシート名を確認してください。")
+                st.error("保存失敗。再起動を試してください。")
 
     # 履歴表示
     if not data.empty:
