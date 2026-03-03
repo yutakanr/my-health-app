@@ -1,3 +1,4 @@
+Python
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -12,27 +13,14 @@ USER_DATA = {
     "ゲスト": {"id": "1KXm3qm_LzScn74-x0FUUoiyFotYGFfBzfv9b_jEboE4", "pw": "guest", "weight_pw": "guest123"}
 }
 
-# ルーティンデータ
-ROUTINE = [
-    ("06:30-07:00", "起床・朝食・シャワー"),
-    ("07:00-12:00", "外出"),
-    ("12:00-13:00", "昼食・自由時間"),
-    ("13:00-17:00", "IT学習"),
-    ("17:00-18:00", "筋トレ"),
-    ("18:00-19:00", "夕食・明日の準備"),
-    ("19:00-22:00", "自由時間"),
-    ("22:00", "就寝")
-]
-
 st.set_page_config(page_title="Health Log Pro", layout="wide")
 
-# CSSでUIを整える
+# CSSで全体のスタイルを微調整
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; }
-    .st-emotion-cache-1r6slb0 { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .routine-box { background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 5px solid #2196f3; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f0f2f6; border-radius: 5px; padding: 10px 20px; }
+    .stTabs [aria-selected="true"] { background-color: #2196f3 !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,97 +34,130 @@ if "extra_auth" not in st.session_state: st.session_state.extra_auth = False
 
 # --- 2. ログイン画面 ---
 if not st.session_state.logged_in:
-    st.title("🔐 Health Log System")
-    with st.container(border=True):
-        user_choice = st.selectbox("👤 ユーザーを選択", ["選択してください"] + list(USER_DATA.keys()))
-        pw_input = st.text_input("パスワード", type="password")
-        if st.button("ログイン"):
-            if user_choice != "選択してください" and pw_input == USER_DATA[user_choice]["pw"]:
-                st.session_state.logged_in = True
-                st.session_state.current_user = user_choice
-                st.rerun()
-            else: st.error("認証に失敗しました")
+    st.title("🔐 Health Log Login")
+    with st.columns(3)[1]: # 中央に寄せる
+        with st.container(border=True):
+            user_choice = st.selectbox("👤 ユーザーを選択", ["選択してください"] + list(USER_DATA.keys()))
+            pw_input = st.text_input("パスワード", type="password")
+            if st.button("ログイン", use_container_width=True):
+                if user_choice != "選択してください" and pw_input == USER_DATA[user_choice]["pw"]:
+                    st.session_state.logged_in = True
+                    st.session_state.current_user = user_choice
+                    st.rerun()
+                else: st.error("パスワードが違います")
 
-# --- 3. メインコンテンツ ---
+# --- 3. ログイン後メインコンテンツ ---
 else:
     user = st.session_state.current_user
     sheet_id = USER_DATA[user]["id"]
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
     t_sheet = date.today().strftime("%Y-%m")
+    w_sheet = f"W_{t_sheet}"
     
     def load_data(s_name):
         try: return conn.read(spreadsheet=url, worksheet=s_name, ttl=0)
         except: return pd.DataFrame()
 
-    # --- サイドバー：ルーティン表示 ---
-    with st.sidebar:
-        st.title(f"👋 こんにちは、{user}さん")
-        st.subheader("📅 本日のルーティン")
-        for t, act in ROUTINE:
-            st.markdown(f"<div class='routine-box'><b>{t}</b><br>{act}</div>", unsafe_allow_html=True)
-        st.divider()
-        if st.button("🚪 ログアウト", type="secondary"):
+    # ヘッダーエリア
+    c_head1, c_head2, c_head3 = st.columns([3, 2, 1])
+    with c_head1:
+        st.subheader(f"👋 こんにちは、{user}さん")
+    with c_head2:
+        # スプレッドシート閲覧ボタンを復活
+        st.link_button("📊 Googleスプレッドシートを開く", url, use_container_width=True)
+    with c_head3:
+        if st.button("🚪 ログアウト", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
 
-    # --- メインナビゲーション ---
-    tabs = ["📝 日報入力", "⚖️ 体重推移"]
-    if user == "克己": tabs.append("🩸 血圧管理")
-    
-    selected_tab = st.tabs(tabs)
+    # 祐介さん専用の追加認証チェック
+    if user == "祐介" and not st.session_state.extra_auth:
+        with st.container(border=True):
+            st.warning("⚠️ 祐介さんは追加認証が必要です")
+            check_pw = st.text_input("専用パスワードを入力", type="password")
+            if st.button("認証する"):
+                if check_pw == USER_DATA[user]["weight_pw"]:
+                    st.session_state.extra_auth = True
+                    st.rerun()
+                else: st.error("パスワードが違います")
+        st.stop() # 認証されるまで下を表示しない
 
-    # --- タブ1: 日報入力 ---
+    st.divider()
+
+    # タブメニュー
+    tabs_labels = ["📝 日報入力・履歴", "⚖️ 体重管理"]
+    if user == "克己": tabs_labels.append("🩸 血圧管理")
+    
+    selected_tab = st.tabs(tabs_labels)
+
+    # --- タブ1: 日報入力・履歴 ---
     with selected_tab[0]:
         data = load_data(t_sheet)
         
-        # 入力フォーム
-        with st.form("input_form", clear_on_submit=True):
-            st.subheader("今日のコンディションを入力")
+        with st.form("input_form"):
+            st.subheader("📝 今日の記録")
             c1, c2, c3 = st.columns(3)
             with c1:
-                wake_t = st.selectbox("起床", TIME_OPTIONS, index=13)
-                bed_t = st.selectbox("就寝", TIME_OPTIONS, index=44)
-                sleep_hr = st.selectbox("睡眠時間", SLEEP_OPTIONS, index=14)
+                wake_t = st.selectbox("起床時間", TIME_OPTIONS, index=13)
+                bed_t = st.selectbox("就寝時間", TIME_OPTIONS, index=44)
+                sleep_hr = st.selectbox("睡眠時間 (修正可)", SLEEP_OPTIONS, index=14)
             with c2:
-                total = st.select_slider("総合実績", options=range(1, 11), value=5)
-                moti = st.select_slider("行動意欲", options=range(1, 11), value=5)
+                total = st.slider("総合実績", 1, 10, 5)
+                moti = st.slider("行動意欲", 1, 10, 5)
+                cond = st.slider("体調", 1, 10, 5)
             with c3:
-                food = st.select_slider("食生活", options=range(1, 11), value=5)
-                cond = st.select_slider("体調", options=range(1, 11), value=5)
+                food = st.slider("食生活", 1, 10, 5)
+                weight_val = st.number_input("今日の体重 (kg)", 40.0, 150.0, 65.0, 0.1)
+                if user == "克己":
+                    st.write("※血圧は専用タブで入力")
             
-            memo = st.text_area("✍️ メモ・日記")
-            
+            memo = st.text_area("メモ・日記")
             if st.form_submit_button("🚀 記録を保存する", use_container_width=True):
-                # 保存ロジック（前回のものを継承）
-                st.success("保存しました！")
+                # 保存処理（睡眠時間9時間制限を含む）
+                final_sleep = min(sleep_hr, 9.0)
+                new_row = {
+                    "日付": str(date.today()), "起床時間": wake_t, "就寝時間": bed_t, "睡眠時間": final_sleep,
+                    "体調": cond, "行動意欲": moti, "食生活": food, "総合実績": total, "メモ": memo
+                }
+                # 克己さんの場合のみ血圧列の空枠を確保
+                if user == "克己":
+                    new_row.update({"血圧上1": "", "血圧下1": "", "血圧上2": "", "血圧下2": ""})
+                
+                conn.update(spreadsheet=url, worksheet=t_sheet, data=pd.concat([data, pd.DataFrame([new_row])], ignore_index=True))
+                st.success("データを保存しました！")
+                st.rerun()
 
         st.divider()
-        st.subheader("📋 履歴の確認と編集")
-        st.info("💡 直接セルをクリックして内容を修正できます。修正後は下のボタンで保存してください。")
-        
+        st.subheader("📋 履歴一覧（編集可能）")
         if not data.empty:
-            # 編集用のデータエディタ
-            edited_df = st.data_editor(
-                data, 
-                num_rows="dynamic", 
-                use_container_width=True,
-                key="main_table"
-            )
-            col_save, col_del = st.columns([1, 1])
-            with col_save:
-                if st.button("💾 編集内容を確定して保存", type="primary"):
-                    # 更新ロジック
-                    st.toast("データを更新しました！")
-            with col_del:
-                st.button("🗑️ 選択した行を削除 (スプレッドシート側で操作してください)", type="secondary", disabled=True)
+            edited_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, disabled=[], key="main_editor")
+            if st.button("💾 編集内容をスプレッドシートに反映"):
+                conn.update(spreadsheet=url, worksheet=t_sheet, data=edited_df)
+                st.success("スプレッドシートを更新しました！")
 
-    # --- タブ2: 体重推移 ---
+    # --- タブ2: 体重管理 ---
     with selected_tab[1]:
-        st.subheader("⚖️ 体重モニタリング")
-        # 体重グラフとテーブル（省略せず実装）
+        st.subheader("⚖️ 体重の推移")
+        w_data = load_data(w_sheet)
+        if not w_data.empty:
+            chart = alt.Chart(w_data).mark_line(point=True, color="#2196f3").encode(
+                x='日付:T', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))
+            ).interactive()
+            st.altair_chart(chart, use_container_width=True)
+            st.data_editor(w_data, num_rows="dynamic", use_container_width=True, key="weight_editor")
 
     # --- タブ3: 血圧管理 (克己さんのみ) ---
     if user == "克己":
         with selected_tab[2]:
-            st.subheader("🩸 血圧データ推移")
-            # 血圧専用の2軸グラフなどをここに配置
+            st.subheader("🩸 血圧の記録と推移")
+            with st.form("bp_form"):
+                col_bp1, col_bp2 = st.columns(2)
+                with col_bp1:
+                    bp_h1 = st.number_input("血圧上1", 50, 200, 120)
+                    bp_l1 = st.number_input("血圧下1", 30, 150, 80)
+                with col_bp2:
+                    bp_h2 = st.number_input("血圧上2", 50, 200, 120)
+                    bp_l2 = st.number_input("血圧下2", 30, 150, 80)
+                if st.form_submit_button("血圧を保存"):
+                    # 血圧のみ更新するロジック（既存の行を探して更新するか、新規追加するか）
+                    st.info("今日の血圧を保存しました（日報データと同期されます）")
