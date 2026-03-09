@@ -14,12 +14,10 @@ USER_DATA = {
 
 st.set_page_config(page_title="Health Log Pro", layout="wide")
 
-# --- UIカスタマイズ（表示トラブルを避けるため最小限に） ---
+# --- UIカスタム ---
 st.markdown("""
     <style>
-    /* チェックボックスの文字だけは確実に見えるように補正 */
     div[data-testid="stCheckbox"] label p { font-weight: 600 !important; }
-    /* フォームの枠線を少し分かりやすく */
     div[data-testid="stForm"] { border: 1px solid #ddd; padding: 20px; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
@@ -75,16 +73,22 @@ with sel_tab[0]:
     except:
         df = pd.DataFrame()
 
-    # グラフ表示
-    if not df.empty:
+    # --- 修正: グラフ表示（列が存在するかチェック） ---
+    if not df.empty and "ごはんの量" in df.columns:
         st.markdown("### 📈 体調トレンド")
         gdf = df.copy()
         gdf['日付'] = pd.to_datetime(gdf['日付'])
         map_10 = {"かなり多い": 8, "多い": 6, "普通": 4, "少なめ": 2, "かなり少なめ": 0, "かなり柔らかい": 8, "柔らかい": 6, "少し硬い": 2, "かなり硬い": 0}
-        gdf['ごはん値'] = gdf['ごはんの量'].map(map_10).fillna(0)
-        gdf['うんち値'] = gdf['うんちの状態'].map(map_10).fillna(0)
+        
+        # 安全に列変換を行う
+        if "ごはんの量" in gdf.columns: gdf['ごはん値'] = gdf['ごはんの量'].map(map_10).fillna(0)
+        if "うんちの状態" in gdf.columns: gdf['うんち値'] = gdf['うんちの状態'].map(map_10).fillna(0)
+        
         cols = ["総合元気度", "ごはん値", "うんち値", "運動量"]
-        for c in cols: gdf[c] = pd.to_numeric(gdf[c], errors='coerce').fillna(0)
+        for c in cols:
+            if c in gdf.columns:
+                gdf[c] = pd.to_numeric(gdf[c], errors='coerce').fillna(0)
+        
         gdf = gdf.sort_values('日付')
         base = alt.Chart(gdf).encode(x=alt.X('日付:T', axis=alt.Axis(format='%m/%d')))
         line1 = base.mark_line(strokeWidth=4, color='#FF69B4').encode(y='総合元気度:Q')
@@ -93,6 +97,8 @@ with sel_tab[0]:
         line4 = base.mark_line(color='#00BFFF').encode(y='運動量:Q')
         st.altair_chart(line1 + line2 + line3 + line4, use_container_width=True)
         st.write("💗元気度  💚ごはん  🧡うんち  💙運動量")
+    else:
+        st.info("まだ今月のデータがありません。下のフォームから最初の記録を入力してね！")
 
     # 入力フォーム
     with st.form("input_form"):
@@ -138,11 +144,12 @@ with sel_tab[0]:
                 "うんち回数": poo_count, "うんちの状態": poo_state, "毛玉嘔吐": vomit, "睡眠時間": sleep_cat, 
                 "運動量": activity, "ブラッシング": brushing, "写真名": photo_name, "総合元気度": total_genki, "メモ": memo
             }
-            conn.update(spreadsheet=url, worksheet=t_sheet, data=pd.concat([df, pd.DataFrame([new_row])], ignore_index=True))
+            # 空のデータフレームでも結合できるように調整
+            combined_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            conn.update(spreadsheet=url, worksheet=t_sheet, data=combined_df)
             st.success("保存しました！")
             st.rerun()
 
-    # 履歴一覧
     if not df.empty:
         st.markdown("### 📋 履歴一覧")
         st.dataframe(df.sort_values("日付", ascending=False), use_container_width=True)
