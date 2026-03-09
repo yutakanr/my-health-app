@@ -6,150 +6,94 @@ import altair as alt
 
 # --- 1. ユーザーデータ設定 ---
 USER_DATA = {
-    "祐介": {"id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", "pw": "yusuke", "weight_pw": st.secrets["passwords"]["user_a_weight"]},
-    "克己": {"id": "1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50", "pw": "katsumi", "weight_pw": st.secrets["passwords"]["user_b_weight"]},
-    "典子": {"id": "1KXm3qm_LzScn74-x0FUUoiyFotYGFfBzfv9b_jEboE4", "pw": "noriko", "weight_pw": st.secrets["passwords"]["user_c_weight"]},
-    "テト": {"id": "1KXm3qm_LzScn74-x0FUUoiyFotYGFfBzfv9b_jEboE4", "pw": "teto", "weight_pw": "guest123"}
+    "祐介": {"id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", "pw": "yusuke"},
+    "克己": {"id": "1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50", "pw": "katsumi"},
+    "典子": {"id": "1KXm3qm_LzScn74-x0FUUoiyFotYGFfBzfv9b_jEboE4", "pw": "noriko"},
+    "テト": {"id": "1KXm3qm_LzScn74-x0FUUoiyFotYGFfBzfv9b_jEboE4", "pw": "teto"}
 }
 
-st.set_page_config(page_title="Health Log Pro", layout="wide")
-
-# --- UIカスタム ---
-st.markdown("""
-    <style>
-    div[data-testid="stCheckbox"] label p { font-weight: 600 !important; }
-    div[data-testid="stForm"] { border: 1px solid #ddd; padding: 20px; border-radius: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
+st.set_page_config(page_title="Health Log Dual", layout="wide")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
-# --- 2. ログイン機能 ---
+# --- 2. ログイン ---
 if not st.session_state.logged_in:
-    st.title("🔐 Health Log Login")
-    with st.columns([1,1.5,1])[1]:
-        with st.container(border=True):
-            user_choice = st.selectbox("👤 ユーザーを選択", ["選択してください"] + list(USER_DATA.keys()))
-            pw_input = st.text_input("パスワード", type="password")
-            if st.button("ログイン", use_container_width=True, type="primary"):
-                if user_choice != "選択してください" and pw_input == USER_DATA[user_choice]["pw"]:
-                    st.session_state.logged_in = True
-                    st.session_state.current_user = user_choice
-                    st.rerun()
-                else: st.error("パスワードが違います")
+    st.title("🔐 Login")
+    user_choice = st.selectbox("👤 ユーザー", ["選択してください"] + list(USER_DATA.keys()))
+    pw_input = st.text_input("パスワード", type="password")
+    if st.button("ログイン"):
+        if user_choice != "選択してください" and pw_input == USER_DATA[user_choice]["pw"]:
+            st.session_state.logged_in = True
+            st.session_state.current_user = user_choice
+            st.rerun()
     st.stop()
 
-# --- 3. メイン画面 ---
+# --- 3. メイン画面設定 ---
 user = st.session_state.current_user
-sheet_id = USER_DATA[user]["id"]
-url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
-t_sheet = date.today().strftime("%Y-%m")
+url = f"https://docs.google.com/spreadsheets/d/{USER_DATA[user]['id']}/edit#gid=0"
+t_month = date.today().strftime("%Y-%m")
 
-# ヘッダー
-col_h1, col_h2 = st.columns([3, 1.5])
-with col_h1:
-    st.title(f"🐾 {user}ちゃんの健康管理" if user == "テト" else f"👋 {user}さんの健康管理")
-with col_h2:
-    st.write("")
-    c_btn1, c_btn2 = st.columns(2)
-    with c_btn1: st.link_button("📊 Sheet", url)
-    with c_btn2: 
-        if st.button("🚪 Logout"):
-            st.session_state.logged_in = False
-            st.rerun()
+st.title(f"👋 {user}さんの管理パネル")
+if st.button("🚪 Logout"):
+    st.session_state.logged_in = False
+    st.rerun()
 
-st.divider()
+# タブで「猫」と「人間」を分ける
+tab_cat, tab_human, tab_weight = st.tabs(["🐾 テトちゃんの記録", "🚶 自分の記録", "⚖️ 体重管理"])
 
-tabs_list = ["📝 記録・推移", "⚖️ 体重管理"]
-if user == "克己": tabs_list.append("🩸 血圧管理")
-sel_tab = st.tabs(tabs_list)
-
-with sel_tab[0]:
-    # データ読み込み
+# --- A. テトちゃんの記録タブ ---
+with tab_cat:
+    st.subheader("📝 テトちゃんの体調管理")
     try:
-        df = conn.read(spreadsheet=url, worksheet=t_sheet, ttl=0)
+        df_cat = conn.read(spreadsheet=url, worksheet=t_month, ttl=0)
     except:
-        df = pd.DataFrame()
+        df_cat = pd.DataFrame()
 
-    # --- 修正: グラフ表示（列が存在するかチェック） ---
-    if not df.empty and "ごはんの量" in df.columns:
-        st.markdown("### 📈 体調トレンド")
-        gdf = df.copy()
-        gdf['日付'] = pd.to_datetime(gdf['日付'])
-        map_10 = {"かなり多い": 8, "多い": 6, "普通": 4, "少なめ": 2, "かなり少なめ": 0, "かなり柔らかい": 8, "柔らかい": 6, "少し硬い": 2, "かなり硬い": 0}
-        
-        # 安全に列変換を行う
-        if "ごはんの量" in gdf.columns: gdf['ごはん値'] = gdf['ごはんの量'].map(map_10).fillna(0)
-        if "うんちの状態" in gdf.columns: gdf['うんち値'] = gdf['うんちの状態'].map(map_10).fillna(0)
-        
-        cols = ["総合元気度", "ごはん値", "うんち値", "運動量"]
-        for c in cols:
-            if c in gdf.columns:
-                gdf[c] = pd.to_numeric(gdf[c], errors='coerce').fillna(0)
-        
-        gdf = gdf.sort_values('日付')
-        base = alt.Chart(gdf).encode(x=alt.X('日付:T', axis=alt.Axis(format='%m/%d')))
-        line1 = base.mark_line(strokeWidth=4, color='#FF69B4').encode(y='総合元気度:Q')
-        line2 = base.mark_line(color='#32CD32').encode(y='ごはん値:Q')
-        line3 = base.mark_line(color='#FFA500').encode(y='うんち値:Q')
-        line4 = base.mark_line(color='#00BFFF').encode(y='運動量:Q')
-        st.altair_chart(line1 + line2 + line3 + line4, use_container_width=True)
-        st.write("💗元気度  💚ごはん  🧡うんち  💙運動量")
-    else:
-        st.info("まだ今月のデータがありません。下のフォームから最初の記録を入力してね！")
-
-    # 入力フォーム
-    with st.form("input_form"):
-        st.markdown("### ✍️ 本日の体調を入力")
-        photo_name = ""
-        if user == "テト":
-            uploaded_file = st.file_uploader("📸 今日のベストショット", type=['jpg', 'jpeg', 'png'])
-            if uploaded_file:
-                st.image(uploaded_file, width=250)
-                photo_name = uploaded_file.name
-            st.divider()
-
+    with st.form("cat_form"):
         c1, c2, c3 = st.columns(3)
-        if user == "テト":
-            with c1:
-                st.markdown("**🍴 食事・おしっこ**")
-                food_val = st.selectbox("ごはんの量", ["かなり多い", "多い", "普通", "少なめ", "かなり少なめ"], index=2)
-                water_val = st.slider("水分補給", 1, 10, 5)
-                pee_count = st.slider("おしっこ回数", 0, 10, 2)
-                vomit = st.checkbox("毛玉・嘔吐あり")
-            with c2:
-                st.markdown("**💩 排泄・睡眠**")
-                poo_count = st.number_input("うんち回数", 0, 10, 1)
-                poo_state = st.selectbox("うんちの状態", ["かなり硬い", "少し硬い", "普通", "柔らかい", "かなり柔らかい"], index=2)
-                sleep_cat = st.selectbox("睡眠時間", ["かなり寝た", "結構寝た", "普通に寝た", "あまり寝てない", "ほとんど寝てない"], index=2)
-            with c3:
-                st.markdown("**🏃 元気度・ケア**")
-                total_genki = st.slider("総合元気度", 1, 10, 8)
-                activity = st.slider("運動量", 1, 10, 5)
-                brushing = st.checkbox("ブラッシング/ケア済")
-        else:
-            with c1: sleep_cat = st.selectbox("睡眠状況", ["かなり寝た", "結構寝た", "普通に寝た", "あまり寝てない", "ほとんど寝てない"], index=2)
-            with c2: total_genki = st.slider("総合実績", 1, 10, 5)
-            with c3: activity = st.slider("行動意欲", 1, 10, 5)
-            food_val, water_val, pee_count, vomit, poo_count, poo_state, brushing = "普通", 5, 0, False, 0, "普通", False
-
-        st.markdown("---")
-        memo = st.text_area("🗒️ メモ・日記", height=100)
+        with c1:
+            food = st.selectbox("ごはん", ["かなり多い", "多い", "普通", "少なめ", "かなり少なめ"], index=2)
+            vomit = st.checkbox("嘔吐あり")
+        with c2:
+            poo = st.selectbox("うんち", ["かなり硬い", "少し硬い", "普通", "柔らかい", "かなり柔らかい"], index=2)
+            pee = st.slider("おしっこ回数", 0, 10, 2)
+        with c3:
+            genki = st.slider("元気度", 1, 10, 8)
+            memo_cat = st.text_area("メモ", placeholder="テトちゃんの様子")
         
-        if st.form_submit_button("🚀 記録を保存", use_container_width=True, type="primary"):
-            new_row = {
-                "日付": str(date.today()), "ごはんの量": food_val, "水分補給": water_val, "おしっこ回数": pee_count,
-                "うんち回数": poo_count, "うんちの状態": poo_state, "毛玉嘔吐": vomit, "睡眠時間": sleep_cat, 
-                "運動量": activity, "ブラッシング": brushing, "写真名": photo_name, "総合元気度": total_genki, "メモ": memo
-            }
-            # 空のデータフレームでも結合できるように調整
-            combined_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            conn.update(spreadsheet=url, worksheet=t_sheet, data=combined_df)
-            st.success("保存しました！")
+        if st.form_submit_button("🐾 猫の記録を保存"):
+            new_cat = {"日付": str(date.today()), "ごはんの量": food, "うんちの状態": poo, "おしっこ回数": pee, "毛玉嘔吐": vomit, "総合元気度": genki, "メモ": memo_cat}
+            conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_cat, pd.DataFrame([new_cat])], ignore_index=True))
+            st.success("テトちゃんの記録完了！")
             st.rerun()
 
-    if not df.empty:
-        st.markdown("### 📋 履歴一覧")
-        st.dataframe(df.sort_values("日付", ascending=False), use_container_width=True)
+# --- B. 人間の記録タブ ---
+with tab_human:
+    st.subheader("🏃 自分の体調管理")
+    # 人間用のシート名が別にある場合はここを修正してください（例: "人間記録"など）
+    # 今回は同じ月別シートに保存する前提で書きます
+    with st.form("human_form"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            sleep = st.selectbox("睡眠状況", ["かなり寝た", "普通", "あまり寝てない"], index=1)
+        with c2:
+            h_genki = st.slider("総合実績", 1, 10, 5)
+        with c3:
+            h_active = st.slider("行動意欲", 1, 10, 5)
+        
+        h_memo = st.text_area("日記・メモ", placeholder="今日の自分の出来事")
+
+        if st.form_submit_button("🚀 自分の記録を保存"):
+            # 人間用は項目名を変えて保存
+            new_human = {"日付": str(date.today()), "睡眠時間": sleep, "総合実績": h_genki, "行動意欲": h_active, "メモ": h_memo}
+            conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_cat, pd.DataFrame([new_human])], ignore_index=True))
+            st.success("自分の記録完了！")
+            st.rerun()
+
+# --- C. 履歴表示 ---
+st.divider()
+st.subheader("📋 履歴一覧")
+if not df_cat.empty:
+    st.dataframe(df_cat.sort_values("日付", ascending=False), use_container_width=True)
