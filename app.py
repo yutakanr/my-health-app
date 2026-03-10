@@ -3,6 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import date
 import altair as alt
+import os
 
 # --- 1. ユーザーデータ設定 ---
 USER_DATA = {
@@ -45,11 +46,6 @@ def load_data(sheet_name):
             return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
         return df
     except: return pd.DataFrame()
-
-def format_drive_url(raw_url):
-    if pd.isna(raw_url) or "id=" not in str(raw_url): return None
-    file_id = str(raw_url).split("id=")[-1].split("&")[0]
-    return f"https://drive.google.com/uc?id={file_id}"
 
 # 編集・削除・一覧表示の共通フッター
 def show_data_footer(display_df, filter_cols, key_suffix):
@@ -99,11 +95,14 @@ tabs = st.tabs(tab_labels)
 with tabs[0]:
     df_main = load_data(t_month)
     if user == "テト":
-        st.subheader("✨ 今日のテトちゃん")
-        col_m, col_b = st.columns([2, 1])
-        with col_m: st.info("写真はGoogleフォームからアップしてね！")
-        with col_b: st.link_button("📷 写真を保存", "あなたのフォームURL", use_container_width=True)
-
+        # --- 📸 GitHubに置いた写真を表示（ファイル名は適宜変えてね） ---
+        # フォルダ内の .jpg や .png を探して表示するロジック
+        photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if photo_files:
+            # 一番最初の画像を表示
+            st.image(photo_files[0], caption="テトちゃん 🐾", width=400)
+        
+        st.subheader("✨ 今日のテトちゃん記録")
         with st.form("teto_form"):
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -133,23 +132,10 @@ with tabs[0]:
             melted = gdf.melt(id_vars=['日付'], value_vars=[c for c in t_cols if c in gdf.columns], var_name='項目', value_name='数値')
             st.altair_chart(alt.Chart(melted).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
             
-            # 写真表示セクション
-            st.subheader("🖼️ 過去の記録と写真")
-            sel_date = st.selectbox("日付を選択", df_main['日付'].unique()[::-1])
-            d_col, p_col = st.columns([1, 1])
-            with d_col:
-                row = df_main[df_main['日付'] == sel_date].iloc[0]
-                st.write(f"🌟 元気: {row.get('総合元気度', '-')}/10 | 💩 うんち: {row.get('うんちの状態', '-')}")
-                st.write(f"📝 メモ: {row.get('メモ', '-')}")
-            with p_col:
-                df_p = load_data("フォームの回答 1")
-                if not df_p.empty:
-                    p_row = df_p[df_p['日付'].astype(str).str.contains(str(sel_date))]
-                    if not p_row.empty: st.image(format_drive_url(p_row.iloc[0]['今日の写真']), use_container_width=True)
-            
             show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
 
     else:
+        # 人間のコード（省略なし）
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
