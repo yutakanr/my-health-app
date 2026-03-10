@@ -33,9 +33,11 @@ if not st.session_state.logged_in:
         else: st.error("パスワードが違います")
     st.stop()
 
-# --- 3. 共通関数 ---
+# --- 3. 共通設定 ---
 user = st.session_state.current_user
-url = f"https://docs.google.com/spreadsheets/d/{USER_DATA[user]['id']}/edit#gid=0"
+# スプレッドシートのIDを直接使うように修正（エラー回避のため）
+sheet_id = USER_DATA[user]["id"]
+url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
 t_month = date.today().strftime("%Y-%m")
 
 def load_data(sheet_name):
@@ -47,7 +49,7 @@ def load_data(sheet_name):
         return df
     except: return pd.DataFrame()
 
-# 編集・削除・一覧表示の共通フッター
+# --- 4. 編集・削除・一覧表示の共通フッター (エラー修正版) ---
 def show_data_footer(display_df, filter_cols, key_suffix):
     if not display_df.empty:
         st.divider()
@@ -57,11 +59,20 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         
         target_date = st.selectbox("編集・削除する日付を選択", target_df['日付'].unique()[::-1], key=f"sb_{key_suffix}")
         c1, c2 = st.columns(2)
+        
         with c1:
             if st.button("🗑️ データを削除", use_container_width=True, key=f"del_{key_suffix}"):
                 raw = load_data(t_month)
-                conn.update(spreadsheet=url, worksheet=t_month, data=raw[raw['日付'] != target_date])
-                st.cache_data.clear(); st.success("削除しました"); st.rerun()
+                if not raw.empty:
+                    # 型を確実に揃えてからフィルタリング
+                    raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
+                    updated_df = raw[raw['日付'] != target_date]
+                    # 書き込み実行
+                    conn.update(spreadsheet=url, worksheet=t_month, data=updated_df)
+                    st.cache_data.clear()
+                    st.success(f"{target_date} のデータを削除しました")
+                    st.rerun()
+        
         with c2:
             if st.button("✏️ データを編集", use_container_width=True, key=f"edit_{key_suffix}"):
                 st.session_state.edit_mode, st.session_state.edit_date = True, target_date
@@ -72,14 +83,17 @@ def show_data_footer(display_df, filter_cols, key_suffix):
                 new_edit_df = st.data_editor(pd.DataFrame([edit_data]))
                 if st.button("✅ 修正を確定", key=f"confirm_{key_suffix}"):
                     raw = load_data(t_month)
+                    raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
                     other_rows = raw[raw['日付'] != st.session_state.edit_date]
                     final_df = pd.concat([other_rows, new_edit_df], ignore_index=True)
                     conn.update(spreadsheet=url, worksheet=t_month, data=final_df)
-                    st.session_state.edit_mode = False; st.cache_data.clear(); st.rerun()
+                    st.session_state.edit_mode = False
+                    st.cache_data.clear()
+                    st.rerun()
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
-# --- 🚀 ヘッダーエリア (タイトルの右に写真を配置) ---
+# --- 🚀 ヘッダーエリア ---
 h_col1, h_col2 = st.columns([3, 1])
 
 with h_col1:
@@ -93,10 +107,9 @@ with h_col2:
     if user == "テト":
         photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if photo_files:
-            # タイトルの横にくるように縮小して表示
             st.image(photo_files[0], width=180)
 
-# --- 4. タブ設定 ---
+# --- 5. タブ設定 ---
 tab_labels = ["🚶 体調記録", "⚖️ 体重管理"]
 if user == "克己": tab_labels.insert(1, "🩸 血圧管理")
 tabs = st.tabs(tab_labels)
@@ -138,7 +151,7 @@ with tabs[0]:
             show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
 
     else:
-        # 人間のコード（省略なし）
+        # 人間の記録
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
