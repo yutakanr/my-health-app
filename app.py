@@ -35,7 +35,6 @@ if not st.session_state.logged_in:
 
 # --- 3. 共通設定 ---
 user = st.session_state.current_user
-# スプレッドシートのIDを直接使うように修正（エラー回避のため）
 sheet_id = USER_DATA[user]["id"]
 url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
 t_month = date.today().strftime("%Y-%m")
@@ -49,7 +48,7 @@ def load_data(sheet_name):
         return df
     except: return pd.DataFrame()
 
-# --- 4. 編集・削除・一覧表示の共通フッター (エラー修正版) ---
+# 編集・削除・一覧表示の共通フッター
 def show_data_footer(display_df, filter_cols, key_suffix):
     if not display_df.empty:
         st.divider()
@@ -64,10 +63,8 @@ def show_data_footer(display_df, filter_cols, key_suffix):
             if st.button("🗑️ データを削除", use_container_width=True, key=f"del_{key_suffix}"):
                 raw = load_data(t_month)
                 if not raw.empty:
-                    # 型を確実に揃えてからフィルタリング
                     raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
                     updated_df = raw[raw['日付'] != target_date]
-                    # 書き込み実行
                     conn.update(spreadsheet=url, worksheet=t_month, data=updated_df)
                     st.cache_data.clear()
                     st.success(f"{target_date} のデータを削除しました")
@@ -93,21 +90,23 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
-# --- 🚀 ヘッダーエリア ---
-h_col1, h_col2 = st.columns([3, 1])
+# --- 🚀 ヘッダーエリア (画像レイアウト調整) ---
+# カラムの比率を変更し、画像を左に寄せる
+h_col1, h_col2 = st.columns([1, 2])
 
 with h_col1:
+    if user == "テト":
+        photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if photo_files:
+            # 画像を少し大きく表示
+            st.image(photo_files[0], width=250)
+
+with h_col2:
     st.title(f"🐾 {user}ちゃんの管理" if user == "テト" else f"👋 {user}さんの管理")
     if st.button("🚪 Logout"):
         st.session_state.logged_in = False
         st.session_state.weight_auth = False
         st.rerun()
-
-with h_col2:
-    if user == "テト":
-        photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        if photo_files:
-            st.image(photo_files[0], width=180)
 
 # --- 5. タブ設定 ---
 tab_labels = ["🚶 体調記録", "⚖️ 体重管理"]
