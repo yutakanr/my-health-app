@@ -204,6 +204,7 @@ with tabs[w_idx]:
                 st.cache_data.clear(); st.rerun()
         if not df_w.empty:
             st.subheader("📈 体重トレンド")
-            st.altair_chart(alt.Chart(df_w.dropna(subset=['体重'])).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
+           # st.altair_chart(alt.Chart(df_w.dropna(subset=['体重'])).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
         show_data_footer(df_w, ["日付", "体重"], "weight")
+
 
