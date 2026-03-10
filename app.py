@@ -10,7 +10,7 @@ USER_DATA = {
     "祐介": {"id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", "pw": "yusuke"},
     "克己": {"id": "1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50", "pw": "katsumi"},
     "典子": {"id": "1KXm3qm_LzScn74-x0FUUoiyFotYGFfBzfv9b_jEboE4", "pw": "noriko"},
-    "テト": {"id": "16_C6qR3-G-37O65K_zO2Nq30A90W3zL99y-B9T2X07k", "pw": "teto"} 
+    "テト": {"id": "1gHZ51t9qMDip_Gk_EjPH14Vke4BhbQEuf2ukZC3MxkQ", "pw": "teto"} 
 }
 
 st.set_page_config(page_title="Health Log Pro", layout="wide")
@@ -206,3 +206,4 @@ with tabs[w_idx]:
             st.subheader("📈 体重トレンド")
             st.altair_chart(alt.Chart(df_w.dropna(subset=['体重'])).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
         show_data_footer(df_w, ["日付", "体重"], "weight")
+
