@@ -53,29 +53,31 @@ if st.button("🚪 Logout"):
     st.session_state.weight_auth = False
     st.rerun()
 
-# --- 4. メイングラフ (0-10に固定) ---
+# --- 4. メイングラフ (0-10固定) ---
 if not df_clean.empty:
     st.subheader("📈 トレンド確認")
     gdf = df_clean.copy()
+    
+    # 表示する項目の選定
     if user == "テト":
-        chart = alt.Chart(gdf).mark_line(strokeWidth=4, color='#FF69B4', point=True).encode(
-            x=alt.X('日付:N', title='日付'), 
-            y=alt.Y('総合元気度:Q', scale=alt.Scale(domain=[0, 10], clamp=True), title='元気度'),
-            tooltip=['日付', '総合元気度']
-        )
-        st.altair_chart(chart, use_container_width=True)
+        target_cols = ["総合元気度", "水分補給", "運動量"]
     else:
-        cols_to_plot = ["総合実績", "行動意欲", "食生活", "睡眠時間"]
-        existing_plot_cols = [c for c in cols_to_plot if c in gdf.columns]
-        if existing_plot_cols:
-            melted_df = gdf.melt(id_vars=['日付'], value_vars=existing_plot_cols, var_name='項目', value_name='数値')
-            chart = alt.Chart(melted_df).mark_line(point=True).encode(
-                x=alt.X('日付:N', title='日付'), 
-                y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10], clamp=True), title='スコア'),
-                color=alt.Color('項目:N', title='凡例'), 
-                tooltip=['日付', '項目', '数値']
-            ).interactive()
-            st.altair_chart(chart, use_container_width=True)
+        target_cols = ["総合実績", "行動意欲", "食生活", "睡眠時間"]
+    
+    existing_cols = [c for c in target_cols if c in gdf.columns]
+    
+    if existing_cols:
+        melted_df = gdf.melt(id_vars=['日付'], value_vars=existing_cols, var_name='項目', value_name='数値')
+        chart = alt.Chart(melted_df).mark_line(point=True).encode(
+            x=alt.X('日付:N', title='日付'), 
+            y=alt.Y('数値:Q', 
+                    scale=alt.Scale(domain=[0, 10], clamp=True), 
+                    axis=alt.Axis(values=[0, 2, 4, 6, 8, 10]), # 軸目盛りを固定
+                    title='スコア'),
+            color=alt.Color('項目:N', title='凡例'), 
+            tooltip=['日付', '項目', '数値']
+        ).properties(height=400).interactive()
+        st.altair_chart(chart, use_container_width=True)
 
 st.divider()
 
@@ -93,12 +95,12 @@ with tabs[0]:
             c1, c2, c3 = st.columns(3)
             with c1:
                 food = st.selectbox("ごはんの量", ["かなり多い", "多い", "普通", "少なめ", "かなり少なめ"], index=2)
-                water = st.slider("水分補給", 1, 10, 5); vomit = st.checkbox("毛玉嘔吐")
+                water = st.slider("水分補給", 0, 10, 5); vomit = st.checkbox("毛玉嘔吐")
             with c2:
                 poo_s = st.selectbox("うんちの状態", ["かなり硬い", "少し硬い", "普通", "柔らかい", "かなり柔らかい"], index=2)
                 poo_c = st.number_input("うんち回数", 0, 10, 1); pee_c = st.slider("おしっこ回数", 0, 10, 2)
             with c3:
-                genki = st.slider("総合元気度", 1, 10, 8); active = st.slider("運動量", 1, 10, 5); brush = st.checkbox("ブラッシング")
+                genki = st.slider("総合元気度", 0, 10, 8); active = st.slider("運動量", 0, 10, 5); brush = st.checkbox("ブラッシング")
             memo_cat = st.text_area("メモ")
             if st.form_submit_button("🐾 記録を保存"):
                 new_row = {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "おしっこ回数": pee_c, "うんち回数": poo_c, "うんちの状態": poo_s, "毛玉嘔吐": vomit, "運動量": active, "ブラッシング": brush, "総合元気度": genki, "メモ": memo_cat}
@@ -110,16 +112,16 @@ with tabs[0]:
             with c1:
                 wake = st.text_input("起床時間", "7:00"); sleep = st.text_input("就寝時間", "23:00"); sl_h = st.number_input("睡眠時間", 0.0, 24.0, 7.0)
             with c2:
-                s_q = st.slider("寝つき", 1, 10, 7); s_w = st.slider("寝起き", 1, 10, 7); cond = st.slider("体調", 1, 10, 7)
+                s_q = st.slider("寝つき", 0, 10, 7); s_w = st.slider("寝起き", 0, 10, 7); cond = st.slider("体調", 0, 10, 7)
             with c3:
-                g = st.slider("総合実績", 1, 10, 5); a = st.slider("行動意欲", 1, 10, 5); f = st.slider("食生活", 1, 10, 6)
+                g = st.slider("総合実績", 0, 10, 5); a = st.slider("行動意欲", 0, 10, 5); f = st.slider("食生活", 0, 10, 6)
             memo = st.text_area("メモ")
             if st.form_submit_button("🚀 保存"):
                 new_row = {"日付": str(date.today()), "起床時間": wake, "就寝時間": sleep, "睡眠時間": sl_h, "寝つき": s_q, "寝起き": s_w, "体調": cond, "総合実績": g, "行動意欲": a, "食生活": f, "メモ": memo}
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.success("保存完了"); st.rerun()
 
-# --- 5-2. 血圧管理タブ (克己さん専用) ---
+# --- 5-2. 血圧管理タブ (専用表) ---
 if user == "克己":
     with tabs[1]:
         st.subheader("🩸 血圧ログ")
@@ -132,17 +134,17 @@ if user == "克己":
                     x=alt.X('日付:N', title='日付'), y=alt.Y('値:Q', title='血圧'), color='項目:N', tooltip=['日付', '項目', '値']
                 ).interactive()
                 st.altair_chart(bp_chart, use_container_width=True)
+                st.write("📖 血圧履歴 (日付と血圧のみ)")
                 st.dataframe(bp_df[["日付"] + bp_cols].sort_values("日付", ascending=False), use_container_width=True)
         with st.form("bp_form"):
             c1, c2 = st.columns(2)
             with c1: u1, d1 = st.number_input("血圧上1", 0, 250, 120), st.number_input("血圧下1", 0, 200, 80)
             with c2: u2, d2 = st.number_input("血圧上2", 0, 250, 120), st.number_input("血圧下2", 0, 200, 80)
             if st.form_submit_button("🩸 血圧を保存"):
-                new_data = {"日付": str(date.today()), "血圧上1": u1, "血圧下1": d1, "血圧上2": u2, "血圧下2": d2}
-                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([new_data])], ignore_index=True))
+                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([{"日付": str(date.today()), "血圧上1": u1, "血圧下1": d1, "血圧上2": u2, "血圧下2": d2}])], ignore_index=True))
                 st.cache_data.clear(); st.success("保存しました"); st.rerun()
 
-# --- 5-3. 体重管理タブ ---
+# --- 5-3. 体重管理タブ (専用表) ---
 weight_tab_idx = 2 if user == "克己" else 1
 with tabs[weight_tab_idx]:
     st.subheader("⚖️ 体重ログ")
@@ -154,7 +156,6 @@ with tabs[weight_tab_idx]:
                 st.rerun()
             else: st.error("パスワードが違います")
     else:
-        # 保存済みデータの表示
         if not df_clean.empty and "体重" in df_clean.columns:
             w_df = df_clean.dropna(subset=["体重"])
             if not w_df.empty:
@@ -162,14 +163,12 @@ with tabs[weight_tab_idx]:
                     x=alt.X('日付:N', title='日付'), y=alt.Y('体重:Q', scale=alt.Scale(zero=False), title='体重(kg)'), tooltip=['日付', '体重']
                 ).interactive()
                 st.altair_chart(w_chart, use_container_width=True)
+                st.write("📖 体重履歴 (日付と体重のみ)")
                 st.dataframe(w_df[["日付", "体重"]].sort_values("日付", ascending=False), use_container_width=True)
-        # 入力フォーム
         with st.form("w_form"):
             weight = st.number_input("体重(kg)", 30.0, 150.0, 60.0, step=0.1)
             if st.form_submit_button("⚖️ 体重を保存"):
-                # 体重のみの更新。他の列を壊さないようにconcatする
-                new_w_row = {"日付": str(date.today()), "体重": weight}
-                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([new_w_row])], ignore_index=True))
+                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
                 st.cache_data.clear(); st.success("体重を保存しました"); st.rerun()
 
 st.divider()
@@ -197,10 +196,10 @@ if not df_clean.empty:
                 st.session_state.edit_mode = False; st.cache_data.clear(); st.rerun()
     
     st.write("📖 全記録一覧")
-    cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "総合実績", "行動意欲", "食生活", "メモ"]
     if user == "テト":
         cols = ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"]
     else:
+        cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "総合実績", "行動意欲", "食生活", "メモ"]
         if user == "克己": cols += ["血圧上1", "血圧下1", "血圧上2", "血圧下2"]
         if user != "祐介": cols += ["体重"]
     
