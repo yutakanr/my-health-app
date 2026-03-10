@@ -50,7 +50,7 @@ st.title(f"🐾 {user}ちゃんの管理" if user == "テト" else f"👋 {user}
 if st.button("🚪 Logout"):
     st.session_state.logged_in = False; st.rerun()
 
-# --- 4. メイングラフ (凡例付き) ---
+# --- 4. メイングラフ (体調→食生活へ変更) ---
 if not df_clean.empty:
     st.subheader("📈 トレンド確認")
     gdf = df_clean.copy()
@@ -63,17 +63,16 @@ if not df_clean.empty:
         )
         st.altair_chart(chart, use_container_width=True)
     else:
-        # 複数ラインを統合して凡例を表示
-        cols_to_plot = ["総合実績", "行動意欲", "体調", "睡眠時間"]
+        # 表示項目を 総合実績, 行動意欲, 食生活, 睡眠時間 に変更
+        cols_to_plot = ["総合実績", "行動意欲", "食生活", "睡眠時間"]
         existing_plot_cols = [c for c in cols_to_plot if c in gdf.columns]
         
         if existing_plot_cols:
-            # データを縦持ちに変換して色分け
             melted_df = gdf.melt(id_vars=['日付'], value_vars=existing_plot_cols, var_name='項目', value_name='数値')
             chart = alt.Chart(melted_df).mark_line(point=True).encode(
                 x=alt.X('日付:N', title='日付'),
                 y=alt.Y('数値:Q', title='スコア', scale=alt.Scale(domain=[0, 10])),
-                color=alt.Color('項目:N', title='グラフ項目', scale=alt.Scale(scheme='category10')),
+                color=alt.Color('項目:N', title='凡例', scale=alt.Scale(scheme='category10')),
                 tooltip=['日付', '項目', '数値']
             ).interactive()
             st.altair_chart(chart, use_container_width=True)
@@ -156,16 +155,16 @@ with tabs[weight_tab_idx]:
             st.altair_chart(w_chart, use_container_width=True)
             st.dataframe(w_df[["日付", "体重"]].sort_values("日付", ascending=False), use_container_width=True)
     with st.form("w_form"):
-        weight = st.number_input("体重", 30.0, 150.0, 60.0, step=0.1)
+        weight = st.number_input("体重(kg)", 30.0, 150.0, 60.0, step=0.1)
         if st.form_submit_button("⚖️ 体重のみを記録"):
             conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
             st.success("体重を保存しました"); st.rerun()
 
 st.divider()
 
-# --- 6. 編集・削除 ---
+# --- 6. 編集・削除 & 全体履歴表 ---
 if not df_clean.empty:
-    st.subheader("📋 データの編集・削除")
+    st.subheader("📋 データの編集・削除・全体履歴")
     target_date = st.selectbox("日付を選択", df_clean['日付'].unique()[::-1])
     c1, c2 = st.columns(2)
     with c1:
@@ -184,3 +183,14 @@ if not df_clean.empty:
                 raw_df = raw_df[raw_df['日付'] != st.session_state.edit_date]
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, new_edit_df], ignore_index=True))
                 st.session_state.edit_mode = False; st.rerun()
+    
+    # ここに全体履歴表を復活させました
+    st.write("📖 今月の全記録一覧")
+    if user == "テト":
+        cols = ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"]
+    else:
+        cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "総合実績", "行動意欲", "食生活", "メモ", "体重"]
+        if user == "克己": cols += ["血圧上1", "血圧下1", "血圧上2", "血圧下2"]
+    
+    existing = [c for c in cols if c in df_clean.columns]
+    st.dataframe(df_clean[existing].sort_values("日付", ascending=False), use_container_width=True)
