@@ -48,7 +48,6 @@ def load_data(sheet_name):
         return df
     except: return pd.DataFrame()
 
-# 編集・削除・一覧表示の共通フッター
 def show_data_footer(display_df, filter_cols, key_suffix):
     if not display_df.empty:
         st.divider()
@@ -90,25 +89,25 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
-# --- 🚀 ヘッダーエリア (画像レイアウト調整) ---
-# カラムの比率を変更し、画像を左に寄せる
-h_col1, h_col2 = st.columns([1, 2])
+# --- 🚀 ヘッダーエリア (左:写真 / 右:タイトル) ---
+h_col1, h_col2 = st.columns([1, 3])
 
 with h_col1:
     if user == "テト":
         photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if photo_files:
-            # 画像を少し大きく表示
             st.image(photo_files[0], width=250)
 
 with h_col2:
-    st.title(f"🐾 {user}ちゃんの管理" if user == "テト" else f"👋 {user}さんの管理")
+    # スペースを少し空けるための改行
+    st.write("")
+    st.title(f"🐾 {user}の体調管理" if user == "テト" else f"👋 {user}さんの体調管理")
     if st.button("🚪 Logout"):
         st.session_state.logged_in = False
         st.session_state.weight_auth = False
         st.rerun()
 
-# --- 5. タブ設定 ---
+# --- 4. タブ設定 ---
 tab_labels = ["🚶 体調記録", "⚖️ 体重管理"]
 if user == "克己": tab_labels.insert(1, "🩸 血圧管理")
 tabs = st.tabs(tab_labels)
@@ -117,7 +116,7 @@ tabs = st.tabs(tab_labels)
 with tabs[0]:
     df_main = load_data(t_month)
     if user == "テト":
-        st.subheader("✨ 今日のテトちゃん記録")
+        st.subheader("✨ 今日のテトの記録")
         with st.form("teto_form"):
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -150,7 +149,7 @@ with tabs[0]:
             show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
 
     else:
-        # 人間の記録
+        # 人間の記録（省略なし）
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
