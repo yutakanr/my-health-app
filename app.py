@@ -79,12 +79,22 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
-# ヘッダー
-st.title(f"🐾 {user}ちゃんの管理" if user == "テト" else f"👋 {user}さんの管理")
-if st.button("🚪 Logout"):
-    st.session_state.logged_in = False
-    st.session_state.weight_auth = False
-    st.rerun()
+# --- 🚀 ヘッダーエリア (タイトルの右に写真を配置) ---
+h_col1, h_col2 = st.columns([3, 1])
+
+with h_col1:
+    st.title(f"🐾 {user}ちゃんの管理" if user == "テト" else f"👋 {user}さんの管理")
+    if st.button("🚪 Logout"):
+        st.session_state.logged_in = False
+        st.session_state.weight_auth = False
+        st.rerun()
+
+with h_col2:
+    if user == "テト":
+        photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if photo_files:
+            # タイトルの横にくるように縮小して表示
+            st.image(photo_files[0], width=180)
 
 # --- 4. タブ設定 ---
 tab_labels = ["🚶 体調記録", "⚖️ 体重管理"]
@@ -96,38 +106,26 @@ with tabs[0]:
     df_main = load_data(t_month)
     if user == "テト":
         st.subheader("✨ 今日のテトちゃん記録")
-        
-        # --- 📸 入力フォームと写真を並べて配置 ---
-        col_form, col_photo = st.columns([2, 1]) # 2:1の比率で分割
-        
-        with col_form:
-            with st.form("teto_form"):
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    food = st.select_slider("ごはん", options=["かなり少", "少", "普通", "多", "かなり多"], value="普通")
-                    water = st.slider("水分 (0-10)", 0, 10, 5)
-                with c2:
-                    poo_s = st.selectbox("うんち状態", ["普通", "少し硬い", "かなり硬い", "柔らかい", "かなり柔らかい"])
-                    poo_c = st.number_input("うんち回数", 0, 10, 1)
-                with c3:
-                    pee_c = st.number_input("おしっこ回数", 0, 10, 2)
-                    vomit = st.checkbox("毛玉嘔吐")
-                c4, c5 = st.columns(2)
-                with c4: genki = st.slider("元気度", 0, 10, 8)
-                with c5: active = st.slider("運動量", 0, 10, 5); brush = st.checkbox("ブラッシング")
-                memo = st.text_area("メモ")
-                if st.form_submit_button("🐾 記録を保存", use_container_width=True, type="primary"):
-                    new_row = {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "おしっこ回数": pee_c, "うんち回数": poo_c, "うんちの状態": poo_s, "毛玉嘔吐": vomit, "運動量": active, "ブラッシング": brush, "総合元気度": genki, "メモ": memo}
-                    conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True))
-                    st.cache_data.clear(); st.rerun()
-        
-        with col_photo:
-            # 右寄りに写真を配置。キャプションを削除し、幅を少し縮小 (300px)
-            photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            if photo_files:
-                st.image(photo_files[0], width=300) # caption引数を削除
-        
-        # --- トレンドグラフと履歴 ---
+        with st.form("teto_form"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                food = st.select_slider("ごはん", options=["かなり少", "少", "普通", "多", "かなり多"], value="普通")
+                water = st.slider("水分 (0-10)", 0, 10, 5)
+            with c2:
+                poo_s = st.selectbox("うんち状態", ["普通", "少し硬い", "かなり硬い", "柔らかい", "かなり柔らかい"])
+                poo_c = st.number_input("うんち回数", 0, 10, 1)
+            with c3:
+                pee_c = st.number_input("おしっこ回数", 0, 10, 2)
+                vomit = st.checkbox("毛玉嘔吐")
+            c4, c5 = st.columns(2)
+            with c4: genki = st.slider("元気度", 0, 10, 8)
+            with c5: active = st.slider("運動量", 0, 10, 5); brush = st.checkbox("ブラッシング")
+            memo = st.text_area("メモ")
+            if st.form_submit_button("🐾 記録を保存", use_container_width=True, type="primary"):
+                new_row = {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "おしっこ回数": pee_c, "うんち回数": poo_c, "うんちの状態": poo_s, "毛玉嘔吐": vomit, "運動量": active, "ブラッシング": brush, "総合元気度": genki, "メモ": memo}
+                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True))
+                st.cache_data.clear(); st.rerun()
+
         if not df_main.empty:
             st.subheader("📈 体調トレンド")
             gdf = df_main.copy()
@@ -140,7 +138,7 @@ with tabs[0]:
             show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
 
     else:
-        # 人間のコード（変更なし）
+        # 人間のコード（省略なし）
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
