@@ -17,6 +17,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "weight_auth" not in st.session_state: st.session_state.weight_auth = False
+if "edit_mode" not in st.session_state: st.session_state.edit_mode = False
 
 # --- 2. ログインチェック ---
 if not st.session_state.logged_in:
@@ -41,6 +42,7 @@ def load_data(sheet_name):
         df = conn.read(spreadsheet=url, worksheet=sheet_name, ttl=0)
         if not df.empty and '日付' in df.columns:
             df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
+            return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
         return df
     except: return pd.DataFrame()
 
@@ -49,10 +51,45 @@ def format_drive_url(raw_url):
     file_id = str(raw_url).split("id=")[-1].split("&")[0]
     return f"https://drive.google.com/uc?id={file_id}"
 
+# 編集・削除・一覧表示の共通フッター
+def show_data_footer(display_df, filter_cols, key_suffix):
+    if not display_df.empty:
+        st.divider()
+        st.subheader("📋 データの編集・削除と一覧")
+        
+        existing_cols = [c for c in filter_cols if c in display_df.columns]
+        target_df = display_df[existing_cols].copy()
+        
+        target_date = st.selectbox("編集・削除する日付を選択", target_df['日付'].unique()[::-1], key=f"sb_{key_suffix}")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🗑️ データを削除", use_container_width=True, key=f"del_{key_suffix}"):
+                raw = load_data(t_month)
+                conn.update(spreadsheet=url, worksheet=t_month, data=raw[raw['日付'] != target_date])
+                st.cache_data.clear(); st.success("削除しました"); st.rerun()
+        with c2:
+            if st.button("✏️ データを編集", use_container_width=True, key=f"edit_{key_suffix}"):
+                st.session_state.edit_mode, st.session_state.edit_date = True, target_date
+
+        if st.session_state.get("edit_mode") and st.session_state.edit_date == target_date:
+            edit_data = target_df[target_df['日付'] == st.session_state.edit_date].iloc[0]
+            with st.expander(f"📝 {st.session_state.edit_date} のデータを修正中", expanded=True):
+                new_edit_df = st.data_editor(pd.DataFrame([edit_data]))
+                if st.button("✅ 修正を確定", key=f"confirm_{key_suffix}"):
+                    raw = load_data(t_month)
+                    other_rows = raw[raw['日付'] != st.session_state.edit_date]
+                    final_df = pd.concat([other_rows, new_edit_df], ignore_index=True)
+                    conn.update(spreadsheet=url, worksheet=t_month, data=final_df)
+                    st.session_state.edit_mode = False; st.cache_data.clear(); st.rerun()
+        
+        st.write("📖 全記録一覧")
+        st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
+
 # ヘッダー
 st.title(f"🐾 {user}ちゃんの管理" if user == "テト" else f"👋 {user}さんの管理")
 if st.button("🚪 Logout"):
     st.session_state.logged_in = False
+    st.session_state.weight_auth = False
     st.rerun()
 
 # --- 4. タブ設定 ---
@@ -94,53 +131,47 @@ with tabs[0]:
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
 
-        # --- テトちゃんグラフ復元 ---
         if not df_main.empty:
-            st.divider()
             st.subheader("📈 体調トレンド")
             gdf = df_main.copy()
             score_map = {"かなり硬い": 0, "少し硬い": 5, "普通": 10, "柔らかい": 5, "かなり柔らかい": 0}
             gdf['うんちスコア'] = gdf['うんちの状態'].map(score_map).fillna(0)
             t_cols = ["総合元気度", "水分補給", "運動量", "うんちスコア"]
             melted = gdf.melt(id_vars=['日付'], value_vars=[c for c in t_cols if c in gdf.columns], var_name='項目', value_name='数値')
-            chart = alt.Chart(melted).mark_line(point=True).encode(
-                x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N'
-            ).properties(height=300)
-            st.altair_chart(chart, use_container_width=True)
-
-            st.subheader("🖼️ 過去の記録と写真")
-            sel_date = st.selectbox("日付を選択", df_main['日付'].unique()[::-1])
-            d_col, p_col = st.columns([1, 1])
-            with d_col:
-                row = df_main[df_main['日付'] == sel_date].iloc[0]
-                st.write(f"🌟 元気: {row.get('総合元気度', '-')}/10")
-                st.write(f"📝 メモ: {row.get('メモ', '-')}")
-            with p_col:
-                df_p = load_data("フォームの回答 1")
-                if not df_p.empty:
-                    p_row = df_p[df_p['日付'].astype(str).str.contains(str(sel_date))]
-                    if not p_row.empty: st.image(format_drive_url(p_row.iloc[0]['今日の写真']), use_container_width=True)
+            st.altair_chart(alt.Chart(melted).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
+            
+            show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
 
     else:
-        # 人間の体調入力
-        st.subheader("📝 本日の体調")
+        # 人間の体調入力フォーム（全項目復活）
+        st.subheader("📝 本日の体調を入力")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
-            with c1: wake = st.text_input("起床", "7:00"); sl_h = st.number_input("睡眠時間", 0.0, 24.0, 7.0)
-            with c2: cond = st.slider("体調", 0, 10, 7); g = st.slider("総合実績", 0, 10, 5)
-            with c3: a = st.slider("行動意欲", 0, 10, 5); f = st.slider("食生活", 0, 10, 6)
+            with c1: 
+                wake = st.text_input("起床時間", "7:00")
+                sleep = st.text_input("就寝時間", "23:00")
+                sl_h = st.number_input("睡眠時間", 0.0, 24.0, 7.0)
+            with c2: 
+                s_q = st.slider("寝つき", 0, 10, 7)
+                s_w = st.slider("寝起き", 0, 10, 7)
+                cond = st.slider("体調", 0, 10, 7)
+            with c3: 
+                g = st.slider("総合実績", 0, 10, 5)
+                a = st.slider("行動意欲", 0, 10, 5)
+                f = st.slider("食生活", 0, 10, 6)
             memo_h = st.text_area("メモ")
             if st.form_submit_button("🚀 保存"):
-                new_row = {"日付": str(date.today()), "睡眠時間": sl_h, "体調": cond, "総合実績": g, "行動意欲": a, "食生活": f, "メモ": memo_h}
+                new_row = {"日付": str(date.today()), "起床時間": wake, "就寝時間": sleep, "睡眠時間": sl_h, "寝つき": s_q, "寝起き": s_w, "体調": cond, "総合実績": g, "行動意欲": a, "食生活": f, "メモ": memo_h}
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
         
-        # 人間のグラフ復元
         if not df_main.empty:
             st.subheader("📈 体調トレンド")
             h_cols = ["行動意欲", "食生活", "睡眠時間", "総合実績"]
             m_h = df_main.melt(id_vars=['日付'], value_vars=[c for c in h_cols if c in df_main.columns], var_name='項目', value_name='数値').dropna()
             st.altair_chart(alt.Chart(m_h).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
+        
+        show_data_footer(df_main, ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "行動意欲", "食生活", "総合実績", "メモ"], "hum")
 
 # --- タブ2: 血圧 (克己のみ) ---
 if user == "克己":
@@ -153,10 +184,7 @@ if user == "克己":
             if st.form_submit_button("🩸 保存"):
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_bp, pd.DataFrame([{"日付": str(date.today()), "血圧上1": u1, "血圧下1": d1, "血圧上2": u2, "血圧下2": d2}])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
-        if not df_bp.empty:
-            st.subheader("📈 血圧トレンド")
-            bp_m = df_bp.melt(id_vars=['日付'], value_vars=["血圧上1", "血圧下1", "血圧上2", "血圧下2"], var_name='項目', value_name='数値').dropna()
-            st.altair_chart(alt.Chart(bp_m).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(zero=False)), color='項目:N').properties(height=300), use_container_width=True)
+        show_data_footer(df_bp, ["日付", "血圧上1", "血圧下1", "血圧上2", "血圧下2"], "bp")
 
 # --- タブ: 体重管理 ---
 w_idx = 2 if user == "克己" else 1
@@ -167,3 +195,9 @@ with tabs[w_idx]:
             if pw == "yawaranr": st.session_state.weight_auth = True; st.rerun()
     else:
         df_w = load_data(t_month)
+        with st.form("w_form"):
+            weight = st.number_input("体重(kg)", 30.0, 150.0, 60.0, step=0.1)
+            if st.form_submit_button("⚖️ 保存"):
+                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_w, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
+                st.cache_data.clear(); st.rerun()
+        show_data_footer(df_w, ["日付", "体重"], "weight")
