@@ -133,23 +133,41 @@ with tabs[0]:
             with c5: active = st.slider("運動量", 0, 10, 5); brush = st.checkbox("ブラッシング")
             memo = st.text_area("メモ")
             
-            if st.form_submit_button("🐾 記録を保存", use_container_width=True, type="primary"):
-                # 重要：スプレッドシートの1行目の名前と順番に100%合わせる！
-                new_row = {
-                    "日付": str(date.today()), 
-                    "ごはんの量": food, 
-                    "水分補給": water, 
-                    "おしっこ回数": pee_c, 
-                    "うんち回数": poo_c, 
-                    "うんちの状態": poo_s, 
-                    "毛玉嘔吐": vomit, 
-                    "睡眠時間": 0,
-                    "運動量": active, 
-                    "ブラッシング": brush,
-                    "写真名": "",
-                    "総合元気度": genki, 
-                    "メモ": memo
-                }
+if st.form_submit_button("🐾 記録を保存", use_container_width=True, type="primary"):
+                try:
+                    new_row = {
+                        "日付": str(date.today()), 
+                        "ごはんの量": food, 
+                        "水分補給": water, 
+                        "おしっこ回数": pee_c, 
+                        "うんち回数": poo_c, 
+                        "うんちの状態": poo_s, 
+                        "毛玉嘔吐": vomit, 
+                        "睡眠時間": 0,
+                        "運動量": active, 
+                        "ブラッシング": brush,
+                        "写真名": "",
+                        "総合元気度": genki, 
+                        "メモ": memo
+                    }
+                    
+                    # 読み込み
+                    current_df = load_data(t_month)
+                    
+                    # データが空の場合の処理を追加
+                    if current_df is None or current_df.empty:
+                        updated_df = pd.DataFrame([new_row])
+                    else:
+                        updated_df = pd.concat([current_df, pd.DataFrame([new_row])], ignore_index=True)
+                    
+                    # 書き込み実行
+                    conn.update(spreadsheet=url, worksheet=t_month, data=updated_df)
+                    st.cache_data.clear()
+                    st.success("✅ 保存に成功しました！シートを確認して！")
+                    st.rerun()
+                except Exception as e:
+                    # エラーが出たら画面に表示させる
+                    st.error(f"保存に失敗したよ... エラー内容: {e}")
                 
                 # データを書き込む
                 current_df = load_data(t_month)
@@ -209,3 +227,4 @@ with tabs[w_idx]:
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([current_df, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
         show_data_footer(df_w, ["日付", "体重"], "weight")
+
