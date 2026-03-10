@@ -53,7 +53,7 @@ if st.button("🚪 Logout"):
     st.session_state.weight_auth = False
     st.rerun()
 
-# --- 4. メイングラフ (0-10で固定) ---
+# --- 4. メイングラフ ---
 if not df_clean.empty:
     st.subheader("📈 トレンド確認")
     gdf = df_clean.copy()
@@ -70,5 +70,22 @@ if not df_clean.empty:
         if existing_plot_cols:
             melted_df = gdf.melt(id_vars=['日付'], value_vars=existing_plot_cols, var_name='項目', value_name='数値')
             chart = alt.Chart(melted_df).mark_line(point=True).encode(
-                x='日付:N', 
-                y=
+                x=alt.X('日付:N', title='日付'), 
+                y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10]), title='スコア'),
+                color=alt.Color('項目:N', title='凡例'), 
+                tooltip=['日付', '項目', '数値']
+            ).interactive()
+            st.altair_chart(chart, use_container_width=True)
+
+st.divider()
+
+# --- 5. タブ切り替え ---
+tab_list = ["🚶 体調記録", "⚖️ 体重管理"]
+if user == "克己": tab_list.insert(1, "🩸 血圧管理")
+tabs = st.tabs(tab_list)
+
+# --- 5-1. 体調記録タブ ---
+with tabs[0]:
+    if user == "テト":
+        with st.form("cat_form"):
+            c1, c
