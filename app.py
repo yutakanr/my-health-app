@@ -90,8 +90,7 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
-# --- 🚀 ヘッダーエリア (レイアウト修正版) ---
-# カラムの比率を変更し、タイトルエリアを広く取る
+# --- 🚀 ヘッダーエリア (サイズを戻して右側に配置) ---
 h_col1, h_col2 = st.columns([3, 2])
 
 with h_col1:
@@ -102,14 +101,12 @@ with h_col1:
         st.rerun()
 
 with h_col2:
-    # 右側のカラムに写真を配置
     if user == "テト":
         photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if photo_files:
-            # カラムに合わせて幅を調整
-            st.image(photo_files[0], use_container_width=True)
+            # サイズを width=250 に戻したよ
+            st.image(photo_files[0], width=250)
 
-# スペースを空ける
 st.write("")
 st.write("")
 
