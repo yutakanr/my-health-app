@@ -57,7 +57,7 @@ if st.button("🚪 Logout"):
 
 st.divider()
 
-# --- 共通の一覧表・編集・削除用関数（一番下に表示） ---
+# --- 共通の一覧表・編集・削除用関数 ---
 def show_data_footer(display_df, filter_cols, key_suffix):
     if not display_df.empty:
         st.divider()
@@ -119,7 +119,6 @@ with tabs[0]:
             except:
                 st.info("teto_photo.png をアップロードしてね")
         
-        # テトちゃん体調グラフ
         if not df_clean.empty:
             score_map = {"かなり硬い": 0, "少し硬い": 5, "普通": 10, "柔らかい": 5, "かなり柔らかい": 0}
             gdf = df_clean.copy()
@@ -135,11 +134,9 @@ with tabs[0]:
                     x=alt.X('日付:N', title='日付'), y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N'
                 ).properties(height=300)
                 st.altair_chart(chart, use_container_width=True)
-        
         show_data_footer(df_clean, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
     
     else:
-        # 人間用体調入力
         st.subheader("📝 本日の体調を入力")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
@@ -155,19 +152,16 @@ with tabs[0]:
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.success("保存完了"); st.rerun()
         
-        # 人間用体調グラフ
         if not df_clean.empty:
             target_cols = ["行動意欲", "食生活", "睡眠時間", "総合実績"]
             existing_cols = [c for c in target_cols if c in df_clean.columns]
-            if any(col in df_clean.columns for col in existing_cols):
+            if existing_cols:
                 st.subheader("📈 体調トレンド")
                 melted_df = df_clean.melt(id_vars=['日付'], value_vars=existing_cols, var_name='項目', value_name='数値').dropna()
-                if not melted_df.empty:
-                    chart = alt.Chart(melted_df).mark_line(point=True).encode(
-                        x=alt.X('日付:N'), y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N'
-                    ).properties(height=300)
-                    st.altair_chart(chart, use_container_width=True)
-
+                chart = alt.Chart(melted_df).mark_line(point=True).encode(
+                    x=alt.X('日付:N'), y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N'
+                ).properties(height=300)
+                st.altair_chart(chart, use_container_width=True)
         show_data_footer(df_clean, ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "行動意欲", "食生活", "メモ", "総合実績"], "hum")
 
 # --- 4-2. 血圧管理タブ (克己のみ) ---
@@ -182,17 +176,17 @@ if user == "克己":
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([{"日付": str(date.today()), "血圧上1": u1, "血圧下1": d1, "血圧上2": u2, "血圧下2": d2}])], ignore_index=True))
                 st.cache_data.clear(); st.success("保存完了"); st.rerun()
         
-        # 血圧グラフのみ表示
-        if not df_clean.empty and "血圧上1" in df_clean.columns:
-            bp_df = df_clean.dropna(subset=["血圧上1"]).copy()
-            if not bp_df.empty:
+        if not df_clean.empty:
+            bp_cols = ["血圧上1", "血圧下1", "血圧上2", "血圧下2"]
+            bp_df_plot = df_clean.dropna(subset=["血圧上1"]).copy()
+            if not bp_df_plot.empty:
                 st.subheader("📈 血圧トレンド")
-                bp_melted = bp_df.melt(id_vars=['日付'], value_vars=["血圧上1", "血圧下1"], var_name='項目', value_name='数値')
+                bp_melted = bp_df_plot.melt(id_vars=['日付'], value_vars=bp_cols, var_name='項目', value_name='数値').dropna()
                 bp_chart = alt.Chart(bp_melted).mark_line(point=True).encode(
-                    x=alt.X('日付:N'), y=alt.Y('数値:Q', scale=alt.Scale(zero=False)), color='項目:N'
-                ).properties(height=300)
+                    x=alt.X('日付:N'), y=alt.Y('数値:Q', scale=alt.Scale(zero=False), title='血圧値'), color='項目:N'
+                ).properties(height=350)
                 st.altair_chart(bp_chart, use_container_width=True)
-                show_data_footer(bp_df, ["日付", "血圧上1", "血圧下1", "血圧上2", "血圧下2"], "bp")
+        show_data_footer(df_clean.dropna(subset=["血圧上1"]), ["日付", "血圧上1", "血圧下1", "血圧上2", "血圧下2"], "bp")
 
 # --- 4-3. 体重管理タブ ---
 weight_tab_idx = 2 if user == "克己" else 1
@@ -211,13 +205,13 @@ with tabs[weight_tab_idx]:
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
                 st.cache_data.clear(); st.success("保存完了"); st.rerun()
         
-        # 体重グラフのみ表示
         if not df_clean.empty and "体重" in df_clean.columns:
-            w_df = df_clean.dropna(subset=["体重"]).copy()
-            if not w_df.empty:
+            w_df_plot = df_clean.dropna(subset=["体重"]).copy()
+            if not w_df_plot.empty:
                 st.subheader("📈 体重トレンド")
-                w_chart = alt.Chart(w_df).mark_line(point=True, color='orange').encode(
+                # scale(zero=False) で体重軸も自動ズーム
+                w_chart = alt.Chart(w_df_plot).mark_line(point=True, color='orange').encode(
                     x=alt.X('日付:N'), y=alt.Y('体重:Q', scale=alt.Scale(zero=False), title='体重(kg)')
                 ).properties(height=300)
                 st.altair_chart(w_chart, use_container_width=True)
-                show_data_footer(w_df, ["日付", "体重"], "weight")
+        show_data_footer(df_clean.dropna(subset=["体重"]), ["日付", "体重"], "weight")
