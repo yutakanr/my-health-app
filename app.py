@@ -43,7 +43,7 @@ try:
         df_clean = raw_df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
     else:
         df_clean = pd.DataFrame()
-except:
+except Exception:
     raw_df = pd.DataFrame(); df_clean = pd.DataFrame()
 
 # ヘッダー
@@ -53,7 +53,7 @@ if st.button("🚪 Logout"):
     st.session_state.weight_auth = False
     st.rerun()
 
-# --- 4. メイングラフ (0-10固定) ---
+# --- 4. メイングラフ (0-10に固定) ---
 if not df_clean.empty:
     st.subheader("📈 トレンド確認")
     gdf = df_clean.copy()
@@ -119,7 +119,7 @@ with tabs[0]:
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.success("保存完了"); st.rerun()
 
-# --- 5-2. 血圧管理タブ ---
+# --- 5-2. 血圧管理タブ (克己さん専用) ---
 if user == "克己":
     with tabs[1]:
         st.subheader("🩸 血圧ログ")
@@ -145,6 +145,7 @@ if user == "克己":
 # --- 5-3. 体重管理タブ ---
 weight_tab_idx = 2 if user == "克己" else 1
 with tabs[weight_tab_idx]:
+    st.subheader("⚖️ 体重ログ")
     if user == "祐介" and not st.session_state.weight_auth:
         w_pw = st.text_input("体重閲覧パスワード", type="password")
         if st.button("🔓 ロック解除"):
@@ -153,7 +154,7 @@ with tabs[weight_tab_idx]:
                 st.rerun()
             else: st.error("パスワードが違います")
     else:
-        st.subheader("⚖️ 体重ログ")
+        # 保存済みデータの表示
         if not df_clean.empty and "体重" in df_clean.columns:
             w_df = df_clean.dropna(subset=["体重"])
             if not w_df.empty:
@@ -162,18 +163,21 @@ with tabs[weight_tab_idx]:
                 ).interactive()
                 st.altair_chart(w_chart, use_container_width=True)
                 st.dataframe(w_df[["日付", "体重"]].sort_values("日付", ascending=False), use_container_width=True)
+        # 入力フォーム
         with st.form("w_form"):
             weight = st.number_input("体重(kg)", 30.0, 150.0, 60.0, step=0.1)
             if st.form_submit_button("⚖️ 体重を保存"):
-                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
-                st.cache_data.clear(); st.success("保存しました"); st.rerun()
+                # 体重のみの更新。他の列を壊さないようにconcatする
+                new_w_row = {"日付": str(date.today()), "体重": weight}
+                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([raw_df, pd.DataFrame([new_w_row])], ignore_index=True))
+                st.cache_data.clear(); st.success("体重を保存しました"); st.rerun()
 
 st.divider()
 
 # --- 6. 編集・削除 ---
 if not df_clean.empty:
     st.subheader("📋 データの編集・削除")
-    target_date = st.selectbox("編集する日付を選択", df_clean['日付'].unique()[::-1])
+    target_date = st.selectbox("編集・削除する日付を選択", df_clean['日付'].unique()[::-1])
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🗑️ データを削除", use_container_width=True):
@@ -190,4 +194,15 @@ if not df_clean.empty:
             if st.button("✅ 修正を確定"):
                 updated_df = pd.concat([raw_df[raw_df['日付'] != st.session_state.edit_date], new_edit_df], ignore_index=True)
                 conn.update(spreadsheet=url, worksheet=t_month, data=updated_df)
-                st.
+                st.session_state.edit_mode = False; st.cache_data.clear(); st.rerun()
+    
+    st.write("📖 全記録一覧")
+    cols = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "総合実績", "行動意欲", "食生活", "メモ"]
+    if user == "テト":
+        cols = ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"]
+    else:
+        if user == "克己": cols += ["血圧上1", "血圧下1", "血圧上2", "血圧下2"]
+        if user != "祐介": cols += ["体重"]
+    
+    existing = [c for c in cols if c in df_clean.columns]
+    st.dataframe(df_clean[existing].sort_values("日付", ascending=False), use_container_width=True)
