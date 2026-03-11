@@ -24,15 +24,25 @@ if "weight_auth" not in st.session_state: st.session_state.weight_auth = False
 if "edit_mode" not in st.session_state: st.session_state.edit_mode = False
 
 # --- 画像変換用のヘルパー関数 ---
+# --- 画像変換用のヘルパー関数（強化版） ---
 def image_to_base64(uploaded_file):
     if uploaded_file is not None:
-        img = Image.open(uploaded_file)
-        # 変換効率とスプレッドシートの制限を考え、少し圧縮する
-        img.thumbnail((500, 500)) 
-        buffered = BytesIO()
-        img.save(buffered, format="JPEG", quality=70)
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-        return f"data:image/jpeg;base64,{img_str}"
+        try:
+            img = Image.open(uploaded_file)
+            # スマホ特有の形式（HEIC等）や透過画像をRGBに強制変換する
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            
+            # 変換効率とスプレッドシートの制限を考え、サイズを小さくする
+            img.thumbnail((500, 500)) 
+            buffered = BytesIO()
+            # エラーが出にくいよう、確実にJPEGで保存
+            img.save(buffered, format="JPEG", quality=70)
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            return f"data:image/jpeg;base64,{img_str}"
+        except Exception as e:
+            st.error(f"画像の処理に失敗しました: {e}")
+            return ""
     return ""
 
 # --- 2. ログインチェック ---
@@ -228,3 +238,4 @@ with tabs[w_idx]:
                 if not df_plot.empty:
                     st.altair_chart(alt.Chart(df_plot).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
         show_data_footer(df_w, ["日付", "体重"], "weight")
+
