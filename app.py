@@ -48,6 +48,20 @@ def load_data(sheet_name):
         return df
     except: return pd.DataFrame()
 
+# --- 4. 削除確認用ダイアログ ---
+@st.dialog("データの削除確認")
+def delete_confirmation(target_date, url, t_month):
+    st.warning(f"{target_date} のデータを完全に削除します。よろしいですか？")
+    if st.button("はい、削除します", type="primary", use_container_width=True):
+        raw = load_data(t_month)
+        if not raw.empty:
+            raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
+            updated_df = raw[raw['日付'] != target_date]
+            conn.update(spreadsheet=url, worksheet=t_month, data=updated_df)
+            st.cache_data.clear()
+            st.success(f"{target_date} のデータを削除しました")
+            st.rerun()
+
 # 編集・削除・一覧表示の共通フッター
 def show_data_footer(display_df, filter_cols, key_suffix):
     if not display_df.empty:
@@ -61,14 +75,7 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         
         with c1:
             if st.button("🗑️ データを削除", use_container_width=True, key=f"del_{key_suffix}"):
-                raw = load_data(t_month)
-                if not raw.empty:
-                    raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
-                    updated_df = raw[raw['日付'] != target_date]
-                    conn.update(spreadsheet=url, worksheet=t_month, data=updated_df)
-                    st.cache_data.clear()
-                    st.success(f"{target_date} のデータを削除しました")
-                    st.rerun()
+                delete_confirmation(target_date, url, t_month)
         
         with c2:
             if st.button("✏️ データを編集", use_container_width=True, key=f"edit_{key_suffix}"):
@@ -90,9 +97,8 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
-# --- 🚀 ヘッダーエリア (サイズを戻して右側に配置) ---
+# --- 🚀 ヘッダーエリア ---
 h_col1, h_col2 = st.columns([3, 2])
-
 with h_col1:
     st.title(f"🐾 {user}の体調管理" if user == "テト" else f"👋 {user}さんの体調管理")
     if st.button("🚪 Logout"):
@@ -104,7 +110,6 @@ with h_col2:
     if user == "テト":
         photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if photo_files:
-            # サイズを width=250 に戻したよ
             st.image(photo_files[0], width=250)
 
 st.write("")
@@ -148,11 +153,9 @@ with tabs[0]:
             t_cols = ["総合元気度", "水分補給", "運動量", "うんちスコア"]
             melted = gdf.melt(id_vars=['日付'], value_vars=[c for c in t_cols if c in gdf.columns], var_name='項目', value_name='数値')
             st.altair_chart(alt.Chart(melted).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
-            
             show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
 
     else:
-        # 人間の記録
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
@@ -171,7 +174,7 @@ with tabs[0]:
             st.altair_chart(alt.Chart(m_h).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
         show_data_footer(df_main, ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "行動意欲", "食生活", "総合実績", "メモ"], "hum")
 
-# --- タブ2: 血圧 (克己のみ) ---
+# --- タブ: 血圧 (克己のみ) ---
 if user == "克己":
     with tabs[1]:
         df_bp = load_data(t_month)
@@ -198,14 +201,25 @@ with tabs[w_idx]:
     else:
         df_w = load_data(t_month)
         with st.form("w_form"):
-            weight = st.number_input("体重(kg)", 30.0, 150.0, 60.0, step=0.1)
+            # テトちゃんの場合は初期値を小さく（6kgなど）設定
+            w_val = 6.0 if user == "テト" else 60.0
+            weight = st.number_input("体重(kg)", 3.0, 150.0, w_val, step=0.1)
             if st.form_submit_button("⚖️ 保存"):
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_w, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
+        
         if not df_w.empty:
             st.subheader("📈 体重トレンド")
-           # st.altair_chart(alt.Chart(df_w.dropna(subset=['体重'])).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
+            # 体重列が存在し、かつ値が入っているデータだけでグラフを作る
+            if '体重' in df_w.columns:
+                df_plot = df_w.dropna(subset=['体重'])
+                if not df_plot.empty:
+                    st.altair_chart(alt.Chart(df_plot).mark_line(point=True, color='orange').encode(
+                        x='日付:N', 
+                        y=alt.Y('体重:Q', scale=alt.Scale(zero=False))
+                    ).properties(height=300), use_container_width=True)
+                else:
+                    st.info("グラフに表示できる体重データがまだありません")
+            else:
+                st.warning("スプレッドシートに『体重』列が見つかりません。")
         show_data_footer(df_w, ["日付", "体重"], "weight")
-
-
-
