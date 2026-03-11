@@ -43,13 +43,10 @@ def load_data(sheet_name):
     try:
         df = conn.read(spreadsheet=url, worksheet=sheet_name, ttl=0)
         if not df.empty:
-            # 1. すべての列が空（NaN/None）の行を完全に削除
             df = df.dropna(how='all')
-            # 2. 「日付」が空の行も削除
             if '日付' in df.columns:
                 df = df.dropna(subset=['日付'])
                 df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
-                # 重複は最後を残す
                 return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
         return df
     except Exception as e:
@@ -69,7 +66,7 @@ def delete_confirmation(target_date, url, t_month):
             st.success(f"{target_date} のデータを削除しました")
             st.rerun()
 
-# 編集・削除・一覧表示の共通フッター
+# 編集・削除・一覧表示の共通フッター（★ここを写真対応に改造）
 def show_data_footer(display_df, filter_cols, key_suffix):
     if not display_df.empty:
         st.divider()
@@ -77,13 +74,22 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         existing_cols = [c for c in filter_cols if c in display_df.columns]
         target_df = display_df[existing_cols].copy()
         
-        target_date = st.selectbox("編集・削除する日付を選択", target_df['日付'].unique()[::-1], key=f"sb_{key_suffix}")
-        c1, c2 = st.columns(2)
+        # 編集・削除・表示対象の日付を選択
+        target_date = st.selectbox("表示・編集・削除する日付を選択", target_df['日付'].unique()[::-1], key=f"sb_{key_suffix}")
         
+        # --- 追加機能：選択した日付の写真があれば表示する ---
+        if "画像URL" in target_df.columns:
+            selected_row = target_df[target_df['日付'] == target_date].iloc[0]
+            pic_url = selected_row.get("画像URL")
+            if pd.notna(pic_url) and pic_url != "":
+                st.info(f"📸 {target_date} のベストショットを表示中")
+                st.image(pic_url, use_container_width=True)
+        # ------------------------------------------
+
+        c1, c2 = st.columns(2)
         with c1:
             if st.button("🗑️ データを削除", use_container_width=True, key=f"del_{key_suffix}"):
                 delete_confirmation(target_date, url, t_month)
-        
         with c2:
             if st.button("✏️ データを編集", use_container_width=True, key=f"edit_{key_suffix}"):
                 st.session_state.edit_mode, st.session_state.edit_date = True, target_date
@@ -99,8 +105,7 @@ def show_data_footer(display_df, filter_cols, key_suffix):
                     final_df = pd.concat([other_rows, new_edit_df], ignore_index=True)
                     conn.update(spreadsheet=url, worksheet=t_month, data=final_df)
                     st.session_state.edit_mode = False
-                    st.cache_data.clear()
-                    st.rerun()
+                    st.cache_data.clear(); st.rerun()
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
@@ -156,13 +161,6 @@ with tabs[0]:
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
 
-        # --- テトちゃんの画像を表示 ---
-        if not df_main.empty and "画像URL" in df_main.columns:
-            valid_imgs = df_main[df_main["画像URL"].notna() & (df_main["画像URL"] != "")]
-            if not valid_imgs.empty:
-                st.write("📸 最新のテトちゃんショット")
-                st.image(valid_imgs.iloc[-1]["画像URL"], use_container_width=True)
-
         if not df_main.empty:
             st.subheader("📈 体調トレンド")
             gdf = df_main.copy()
@@ -171,10 +169,10 @@ with tabs[0]:
             t_cols = ["総合元気度", "水分補給", "運動量", "うんちスコア"]
             melted = gdf.melt(id_vars=['日付'], value_vars=[c for c in t_cols if c in gdf.columns], var_name='項目', value_name='数値')
             st.altair_chart(alt.Chart(melted).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
+            # フッター（画像URLも表示対象に含める）
             show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "画像URL", "メモ"], "cat")
 
     else:
-        # 人間の記録（画像URL機能なしのまま）
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
@@ -235,8 +233,4 @@ with tabs[w_idx]:
                         x='日付:N', 
                         y=alt.Y('体重:Q', scale=alt.Scale(zero=False))
                     ).properties(height=300), use_container_width=True)
-                else:
-                    st.info("グラフに表示できる体重データがまだありません")
-            else:
-                st.warning("スプレッドシートに『体重』列が見つかりません。")
-        show_data_footer(df_w, ["日付", "体重"], "weight")
+            show_data_footer(df_w, ["日付", "体重"], "weight")
