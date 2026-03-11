@@ -45,10 +45,9 @@ def load_data(sheet_name):
         if not df.empty:
             # 1. すべての列が空（NaN/None）の行を完全に削除
             df = df.dropna(how='all')
-            # 2. 「日付」が空の行も、データとして成立しないので削除
+            # 2. 「日付」が空の行も削除
             if '日付' in df.columns:
                 df = df.dropna(subset=['日付'])
-                # 日付を文字列に変換
                 df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
                 # 重複は最後を残す
                 return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
@@ -147,11 +146,22 @@ with tabs[0]:
             c4, c5 = st.columns(2)
             with c4: genki = st.slider("元気度", 0, 10, 8)
             with c5: active = st.slider("運動量", 0, 10, 5); brush = st.checkbox("ブラッシング")
+            
+            # --- テトちゃん専用：画像URL入力欄 ---
+            teto_img_url = st.text_input("🖼️ 今日のテトのベストショット (画像URL)", placeholder="https://... (猫の写真URL)")
+            
             memo = st.text_area("メモ")
             if st.form_submit_button("🐾 記録を保存", use_container_width=True, type="primary"):
-                new_row = {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "おしっこ回数": pee_c, "うんち回数": poo_c, "うんちの状態": poo_s, "毛玉嘔吐": vomit, "運動量": active, "ブラッシング": brush, "総合元気度": genki, "メモ": memo}
+                new_row = {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "おしっこ回数": pee_c, "うんち回数": poo_c, "うんちの状態": poo_s, "毛玉嘔吐": vomit, "運動量": active, "ブラッシング": brush, "総合元気度": genki, "画像URL": teto_img_url, "メモ": memo}
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
+
+        # --- テトちゃんの画像を表示 ---
+        if not df_main.empty and "画像URL" in df_main.columns:
+            valid_imgs = df_main[df_main["画像URL"].notna() & (df_main["画像URL"] != "")]
+            if not valid_imgs.empty:
+                st.write("📸 最新のテトちゃんショット")
+                st.image(valid_imgs.iloc[-1]["画像URL"], use_container_width=True)
 
         if not df_main.empty:
             st.subheader("📈 体調トレンド")
@@ -161,9 +171,10 @@ with tabs[0]:
             t_cols = ["総合元気度", "水分補給", "運動量", "うんちスコア"]
             melted = gdf.melt(id_vars=['日付'], value_vars=[c for c in t_cols if c in gdf.columns], var_name='項目', value_name='数値')
             st.altair_chart(alt.Chart(melted).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
-            show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "メモ"], "cat")
+            show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "画像URL", "メモ"], "cat")
 
     else:
+        # 人間の記録（画像URL機能なしのまま）
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
@@ -209,7 +220,6 @@ with tabs[w_idx]:
     else:
         df_w = load_data(t_month)
         with st.form("w_form"):
-            # テトちゃんの場合は初期値を小さく（6kgなど）設定
             w_val = 6.0 if user == "テト" else 60.0
             weight = st.number_input("体重(kg)", 3.0, 150.0, w_val, step=0.1)
             if st.form_submit_button("⚖️ 保存"):
@@ -218,7 +228,6 @@ with tabs[w_idx]:
         
         if not df_w.empty:
             st.subheader("📈 体重トレンド")
-            # 体重列が存在し、かつ値が入っているデータだけでグラフを作る
             if '体重' in df_w.columns:
                 df_plot = df_w.dropna(subset=['体重'])
                 if not df_plot.empty:
@@ -231,4 +240,3 @@ with tabs[w_idx]:
             else:
                 st.warning("スプレッドシートに『体重』列が見つかりません。")
         show_data_footer(df_w, ["日付", "体重"], "weight")
-
