@@ -208,3 +208,4 @@ with tabs[w_idx]:
         show_data_footer(df_w, ["日付", "体重"], "weight")
 
 
+
