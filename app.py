@@ -4,6 +4,9 @@ import pandas as pd
 from datetime import date
 import altair as alt
 import os
+import base64
+from io import BytesIO
+from PIL import Image
 
 # --- 1. ユーザーデータ設定 ---
 USER_DATA = {
@@ -19,6 +22,18 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "weight_auth" not in st.session_state: st.session_state.weight_auth = False
 if "edit_mode" not in st.session_state: st.session_state.edit_mode = False
+
+# --- 画像変換用のヘルパー関数 ---
+def image_to_base64(uploaded_file):
+    if uploaded_file is not None:
+        img = Image.open(uploaded_file)
+        # 変換効率とスプレッドシートの制限を考え、少し圧縮する
+        img.thumbnail((500, 500)) 
+        buffered = BytesIO()
+        img.save(buffered, format="JPEG", quality=70)
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        return f"data:image/jpeg;base64,{img_str}"
+    return ""
 
 # --- 2. ログインチェック ---
 if not st.session_state.logged_in:
@@ -49,7 +64,7 @@ def load_data(sheet_name):
                 df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
                 return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 # --- 4. 削除確認用ダイアログ ---
@@ -62,11 +77,9 @@ def delete_confirmation(target_date, url, t_month):
             raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
             updated_df = raw[raw['日付'] != target_date]
             conn.update(spreadsheet=url, worksheet=t_month, data=updated_df)
-            st.cache_data.clear()
-            st.success(f"{target_date} のデータを削除しました")
-            st.rerun()
+            st.cache_data.clear(); st.success(f"{target_date} のデータを削除しました"); st.rerun()
 
-# 編集・削除・一覧表示の共通フッター（★ここを写真対応に改造）
+# 編集・削除・一覧表示の共通フッター
 def show_data_footer(display_df, filter_cols, key_suffix):
     if not display_df.empty:
         st.divider()
@@ -74,17 +87,15 @@ def show_data_footer(display_df, filter_cols, key_suffix):
         existing_cols = [c for c in filter_cols if c in display_df.columns]
         target_df = display_df[existing_cols].copy()
         
-        # 編集・削除・表示対象の日付を選択
         target_date = st.selectbox("表示・編集・削除する日付を選択", target_df['日付'].unique()[::-1], key=f"sb_{key_suffix}")
         
-        # --- 追加機能：選択した日付の写真があれば表示する ---
+        # --- 写真の表示 ---
         if "画像URL" in target_df.columns:
             selected_row = target_df[target_df['日付'] == target_date].iloc[0]
-            pic_url = selected_row.get("画像URL")
-            if pd.notna(pic_url) and pic_url != "":
-                st.info(f"📸 {target_date} のベストショットを表示中")
-                st.image(pic_url, use_container_width=True)
-        # ------------------------------------------
+            pic_data = selected_row.get("画像URL")
+            if pd.notna(pic_data) and pic_data != "":
+                st.info(f"📸 {target_date} のベストショット")
+                st.image(pic_data, use_container_width=True)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -99,33 +110,18 @@ def show_data_footer(display_df, filter_cols, key_suffix):
             with st.expander(f"📝 {st.session_state.edit_date} のデータを修正中", expanded=True):
                 new_edit_df = st.data_editor(pd.DataFrame([edit_data]))
                 if st.button("✅ 修正を確定", key=f"confirm_{key_suffix}"):
-                    raw = load_data(t_month)
-                    raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
+                    raw = load_data(t_month); raw['日付'] = pd.to_datetime(raw['日付']).dt.strftime('%Y-%m-%d')
                     other_rows = raw[raw['日付'] != st.session_state.edit_date]
                     final_df = pd.concat([other_rows, new_edit_df], ignore_index=True)
                     conn.update(spreadsheet=url, worksheet=t_month, data=final_df)
-                    st.session_state.edit_mode = False
-                    st.cache_data.clear(); st.rerun()
+                    st.session_state.edit_mode = False; st.cache_data.clear(); st.rerun()
         
         st.dataframe(target_df.sort_values("日付", ascending=False), use_container_width=True)
 
-# --- 🚀 ヘッダーエリア ---
-h_col1, h_col2 = st.columns([3, 2])
-with h_col1:
-    st.title(f"🐾 {user}の体調管理" if user == "テト" else f"👋 {user}さんの体調管理")
-    if st.button("🚪 Logout"):
-        st.session_state.logged_in = False
-        st.session_state.weight_auth = False
-        st.rerun()
-
-with h_col2:
-    if user == "テト":
-        photo_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        if photo_files:
-            st.image(photo_files[0], width=250)
-
-st.write("")
-st.write("")
+# --- 🚀 ヘッダー ---
+st.title(f"🐾 {user}の体調管理" if user == "テト" else f"👋 {user}さんの体調管理")
+if st.button("🚪 Logout"):
+    st.session_state.logged_in = False; st.session_state.weight_auth = False; st.rerun()
 
 # --- 5. タブ設定 ---
 tab_labels = ["🚶 体調記録", "⚖️ 体重管理"]
@@ -152,12 +148,14 @@ with tabs[0]:
             with c4: genki = st.slider("元気度", 0, 10, 8)
             with c5: active = st.slider("運動量", 0, 10, 5); brush = st.checkbox("ブラッシング")
             
-            # --- テトちゃん専用：画像URL入力欄 ---
-            teto_img_url = st.text_input("🖼️ 今日のテトのベストショット (画像URL)", placeholder="https://... (猫の写真URL)")
+            # --- アップロード機能に変更 ---
+            st.write("🖼️ **今日のテトのベストショット**")
+            teto_img_file = st.file_uploader("写真を選択（スマホのカメラもOK）", type=['png', 'jpg', 'jpeg'])
             
             memo = st.text_area("メモ")
             if st.form_submit_button("🐾 記録を保存", use_container_width=True, type="primary"):
-                new_row = {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "おしっこ回数": pee_c, "うんち回数": poo_c, "うんちの状態": poo_s, "毛玉嘔吐": vomit, "運動量": active, "ブラッシング": brush, "総合元気度": genki, "画像URL": teto_img_url, "メモ": memo}
+                img_base64 = image_to_base64(teto_img_file) # 画像を文字列に変換
+                new_row = {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "おしっこ回数": pee_c, "うんち回数": poo_c, "うんちの状態": poo_s, "毛玉嘔吐": vomit, "運動量": active, "ブラッシング": brush, "総合元気度": genki, "画像URL": img_base64, "メモ": memo}
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
 
@@ -169,10 +167,10 @@ with tabs[0]:
             t_cols = ["総合元気度", "水分補給", "運動量", "うんちスコア"]
             melted = gdf.melt(id_vars=['日付'], value_vars=[c for c in t_cols if c in gdf.columns], var_name='項目', value_name='数値')
             st.altair_chart(alt.Chart(melted).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(domain=[0, 10])), color='項目:N').properties(height=300), use_container_width=True)
-            # フッター（画像URLも表示対象に含める）
             show_data_footer(df_main, ["日付", "ごはんの量", "水分補給", "おしっこ回数", "うんち回数", "うんちの状態", "毛玉嘔吐", "運動量", "ブラッシング", "総合元気度", "画像URL", "メモ"], "cat")
 
     else:
+        # 人間側（画像機能なし）
         st.subheader("📝 本日の体調")
         with st.form("h_form"):
             c1, c2, c3 = st.columns(3)
@@ -223,14 +221,10 @@ with tabs[w_idx]:
             if st.form_submit_button("⚖️ 保存"):
                 conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_w, pd.DataFrame([{"日付": str(date.today()), "体重": weight}])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
-        
         if not df_w.empty:
             st.subheader("📈 体重トレンド")
             if '体重' in df_w.columns:
                 df_plot = df_w.dropna(subset=['体重'])
                 if not df_plot.empty:
-                    st.altair_chart(alt.Chart(df_plot).mark_line(point=True, color='orange').encode(
-                        x='日付:N', 
-                        y=alt.Y('体重:Q', scale=alt.Scale(zero=False))
-                    ).properties(height=300), use_container_width=True)
-            show_data_footer(df_w, ["日付", "体重"], "weight")
+                    st.altair_chart(alt.Chart(df_plot).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
+        show_data_footer(df_w, ["日付", "体重"], "weight")
