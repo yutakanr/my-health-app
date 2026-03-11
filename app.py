@@ -42,11 +42,19 @@ t_month = date.today().strftime("%Y-%m")
 def load_data(sheet_name):
     try:
         df = conn.read(spreadsheet=url, worksheet=sheet_name, ttl=0)
-        if not df.empty and '日付' in df.columns:
-            df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
-            return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
+        if not df.empty:
+            # 1. すべての列が空（NaN/None）の行を完全に削除
+            df = df.dropna(how='all')
+            # 2. 「日付」が空の行も、データとして成立しないので削除
+            if '日付' in df.columns:
+                df = df.dropna(subset=['日付'])
+                # 日付を文字列に変換
+                df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
+                # 重複は最後を残す
+                return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        return pd.DataFrame()
 
 # --- 4. 削除確認用ダイアログ ---
 @st.dialog("データの削除確認")
@@ -223,3 +231,4 @@ with tabs[w_idx]:
             else:
                 st.warning("スプレッドシートに『体重』列が見つかりません。")
         show_data_footer(df_w, ["日付", "体重"], "weight")
+
