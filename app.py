@@ -65,12 +65,12 @@ def load_data(sheet_name):
 
 def save_entry(sheet_name, new_data_dict):
     existing_df = load_data(sheet_name)
-    target_date = new_data_dict["日付"]
+    target_date = str(new_data_dict["日付"])
     
     if not existing_df.empty and target_date in existing_df["日付"].values:
         idx = existing_df[existing_df["日付"] == target_date].index[0]
         for col, val in new_data_dict.items():
-            if val is not None and val != "": # 入力がある項目だけ更新
+            if val is not None and val != "": # 入力がある項目だけ精密に上書き
                 existing_df.at[idx, col] = val
         final_df = existing_df
     else:
@@ -88,7 +88,7 @@ with c_month:
     month_opts = [(today.replace(day=1) - pd.DateOffset(months=i)).strftime("%Y-%m") for i in range(12)]
     selected_month = st.selectbox("📅 表示月", month_opts)
 with c_logout:
-    st.write("") # 調整用
+    st.write("") 
     if st.button("🚪 Logout", use_container_width=True):
         st.session_state.logged_in = False; st.rerun()
 
@@ -105,29 +105,30 @@ with tabs[0]:
                 c1, c2 = st.columns(2)
                 with c1: 
                     food = st.select_slider("ごはん", ["かなり少", "少", "普通", "多", "かなり多"], "普通")
-                    water = st.slider("水分", 0, 10, 5)
+                    water = st.slider("水分補給", 0, 10, 5)
                 with c2: 
-                    poo_s = st.selectbox("うんち", ["普通", "少し硬い", "かなり硬い", "柔らかい", "かなり柔らかい"])
-                    poo_c = st.number_input("回数", 0, 10, 1)
+                    poo_s = st.selectbox("うんちの状態", ["普通", "少し硬い", "かなり硬い", "柔らかい", "かなり柔らかい"])
+                    poo_c = st.number_input("うんち回数", 0, 10, 1)
                 t_img = st.file_uploader("📸 写真", type=['png', 'jpg', 'jpeg'])
                 memo = st.text_area("メモ")
-                if st.form_submit_button("🐾 保存"):
+                if st.form_submit_button("🐾 記録を保存"):
                     save_entry(selected_month, {"日付": str(date.today()), "ごはんの量": food, "水分補給": water, "うんちの状態": poo_s, "うんち回数": poo_c, "画像URL": image_to_base64(t_img), "メモ": memo})
                     st.rerun()
             else:
                 c1, c2 = st.columns(2)
                 with c1: cond = st.slider("体調", 0, 10, 7); sl_h = st.number_input("睡眠時間", 0.0, 24.0, 7.0)
                 with c2: g = st.slider("総合実績", 0, 10, 5); memo = st.text_area("メモ")
-                if st.form_submit_button("🚀 保存"):
+                if st.form_submit_button("🚀 記録を保存"):
                     save_entry(selected_month, {"日付": str(date.today()), "体調": cond, "睡眠時間": sl_h, "総合実績": g, "メモ": memo})
                     st.rerun()
     
     if not df_main.empty:
         st.subheader("📈 トレンド")
+        # 存在する列だけでグラフ作成
         v_cols = [c for c in ["体調", "睡眠時間", "総合実績", "水分補給"] if c in df_main.columns]
         if v_cols:
             m_df = df_main.melt(id_vars=['日付'], value_vars=v_cols).dropna()
-            st.altair_chart(alt.Chart(m_df).mark_line(point=True).encode(x='日付:N', y='数値:Q', color='項目:N').properties(height=300), use_container_width=True)
+            st.altair_chart(alt.Chart(m_df).mark_line(point=True).encode(x='日付:N', y=alt.Y('value:Q', title='数値'), color='variable:N').properties(height=300), use_container_width=True)
 
 # --- 血圧タブ (克己のみ) ---
 if user == "克己":
@@ -144,4 +145,54 @@ if user == "克己":
         if not df_bp.empty:
             st.subheader("📈 血圧")
             bp_c = [c for c in ["血圧上1", "血圧下1", "血圧上2", "血圧下2"] if c in df_bp.columns]
-            st.altair_chart(alt.Chart(df_bp.melt(id_vars=['日付'], value_vars=bp_c)).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値
+            if bp_c:
+                st.altair_chart(alt.Chart(df_bp.melt(id_vars=['日付'], value_vars=bp_c)).mark_line(point=True).encode(x='日付:N', y=alt.Y('value:Q', scale=alt.Scale(zero=False), title='血圧'), color='variable:N').properties(height=250), use_container_width=True)
+            st.subheader("💓 脈拍")
+            p_c = [c for c in ["脈拍1", "脈拍2"] if c in df_bp.columns]
+            if p_c:
+                st.altair_chart(alt.Chart(df_bp.melt(id_vars=['日付'], value_vars=p_c)).mark_line(point=True).encode(x='日付:N', y=alt.Y('value:Q', scale=alt.Scale(zero=False), title='脈拍'), color=alt.Color('variable:N', scale=alt.Scale(scheme='set2'))).properties(height=250), use_container_width=True)
+
+# --- 体重タブ ---
+with tabs[-1]:
+    if user == "祐介" and not st.session_state.weight_auth:
+        pw = st.text_input("体重PW", type="password")
+        if st.button("🔓 解除"):
+            if pw == "yawaranr": st.session_state.weight_auth = True; st.rerun()
+    else:
+        df_w = load_data(selected_month)
+        if selected_month == today.strftime("%Y-%m"):
+            with st.form("w_form", clear_on_submit=True):
+                weight = st.number_input("体重(kg)", 3.0, 150.0, 60.0, step=0.1)
+                if st.form_submit_button("⚖️ 保存"):
+                    save_entry(selected_month, {"日付": str(date.today()), "体重": weight})
+                    st.rerun()
+        if not df_w.empty and '体重' in df_w.columns:
+            st.altair_chart(alt.Chart(df_w.dropna(subset=['体重'])).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
+
+# --- 共通フッター (一覧と詳細) ---
+st.divider()
+all_df = load_data(selected_month)
+if not all_df.empty:
+    st.subheader(f"📋 {selected_month} の詳細と編集")
+    target_date = st.selectbox("日付を選んで詳細表示・編集", all_df['日付'].unique()[::-1])
+    row = all_df[all_df['日付'] == target_date].iloc[0]
+    
+    if "画像URL" in row and str(row["画像URL"]).startswith("data:image"):
+        st.image(row["画像URL"], caption=f"{target_date} のベストショット", width=400)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🗑️ この日のデータを削除", use_container_width=True):
+            conn.update(spreadsheet=url, worksheet=selected_month, data=all_df[all_df['日付'] != target_date])
+            st.cache_data.clear(); st.rerun()
+    with c2:
+        if st.button("✏️ この日のデータを編集", use_container_width=True):
+            st.session_state.edit_mode, st.session_state.edit_date = True, target_date
+
+    if st.session_state.get("edit_mode") and st.session_state.edit_date == target_date:
+        edit_df = st.data_editor(pd.DataFrame([row]))
+        if st.button("✅ 編集を確定する"):
+            save_entry(selected_month, edit_df.iloc[0].to_dict())
+            st.session_state.edit_mode = False; st.rerun()
+    
+    st.dataframe(all_df.sort_values("日付", ascending=False), use_container_width=True)
