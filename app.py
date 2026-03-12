@@ -205,17 +205,33 @@ if user == "克己":
         df_bp = load_data(t_month)
         with st.form("bp_form"):
             c1, c2 = st.columns(2)
-            with c1: u1, d1 = st.number_input("血圧上1", 0, 250, 120), st.number_input("血圧下1", 0, 200, 80)
-            with c2: u2, d2 = st.number_input("血圧上2", 0, 250, 120), st.number_input("血圧下2", 0, 200, 80)
+            with c1: 
+                u1 = st.number_input("血圧上1", 0, 250, 120)
+                d1 = st.number_input("血圧下1", 0, 200, 80)
+            with c2: 
+                u2 = st.number_input("血圧上2", 0, 250, 120)
+                d2 = st.number_input("血圧下2", 0, 200, 80)
+            
             if st.form_submit_button("🩸 保存"):
-                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_bp, pd.DataFrame([{"日付": str(date.today()), "血圧上1": u1, "血圧下1": d1, "血圧上2": u2, "血圧下2": d2}])], ignore_index=True))
+                # スプレッドシートにある列（上1, 下1, 上2, 下2）だけでデータを作る
+                new_bp = {"日付": str(date.today()), "血圧上1": u1, "血圧下1": d1, "血圧上2": u2, "血圧下2": d2}
+                conn.update(spreadsheet=url, worksheet=t_month, data=pd.concat([df_bp, pd.DataFrame([new_bp])], ignore_index=True))
                 st.cache_data.clear(); st.rerun()
+        
         if not df_bp.empty:
             st.subheader("📈 血圧トレンド")
-            bp_m = df_bp.melt(id_vars=['日付'], value_vars=["血圧上1", "血圧下1", "血圧上2", "血圧下2"], var_name='項目', value_name='数値').dropna()
-            st.altair_chart(alt.Chart(bp_m).mark_line(point=True).encode(x='日付:N', y=alt.Y('数値:Q', scale=alt.Scale(zero=False)), color='項目:N').properties(height=300), use_container_width=True)
-        show_data_footer(df_bp, ["日付", "血圧上1", "血圧下1", "血圧上2", "血圧下2"], "bp")
-
+            # グラフ表示（スプレッドシートの列名と完全に一致させる）
+            v_cols = [c for c in ["血圧上1", "血圧下1", "血圧上2", "血圧下2"] if c in df_bp.columns]
+            if v_cols:
+                bp_m = df_bp.melt(id_vars=['日付'], value_vars=v_cols, var_name='項目', value_name='数値').dropna()
+                st.altair_chart(alt.Chart(bp_m).mark_line(point=True).encode(
+                    x='日付:N', 
+                    y=alt.Y('数値:Q', scale=alt.Scale(zero=False)), 
+                    color='項目:N'
+                ).properties(height=300), use_container_width=True)
+            
+            # 📋 表の表示（ここで指定した名前がスプレッドシートにないと表示されないので注意！）
+            show_data_footer(df_bp, ["日付", "血圧上1", "血圧下1", "血圧上2", "血圧下2"], "bp")
 # --- タブ: 体重管理 ---
 w_idx = 2 if user == "克己" else 1
 with tabs[w_idx]:
@@ -238,4 +254,5 @@ with tabs[w_idx]:
                 if not df_plot.empty:
                     st.altair_chart(alt.Chart(df_plot).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
         show_data_footer(df_w, ["日付", "体重"], "weight")
+
 
