@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import date
 import altair as alt
 
-# --- 1. 設定 & ログインチェック ---
+# --- 1. ユーザーデータ設定 ---
 USER_DATA = {
     "祐介": {"id": "1LwTU4uf06OgRTLkP8hWoy22Wc7Zoth_cRBxsm2jjtvE", "pw": "yusuke"},
     "克己": {"id": "1nKzeIhfBj97gQJWVCioAt_BfauQPr8CVBe49LPczr50", "pw": "katsumi"},
@@ -17,7 +17,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
-# ログイン画面
+# ログイン処理
 if not st.session_state.logged_in:
     st.title("🔐 Login")
     u_choice = st.selectbox("ユーザーを選択", ["選択してください"] + list(USER_DATA.keys()))
@@ -29,9 +29,10 @@ if not st.session_state.logged_in:
             st.rerun()
     st.stop()
 
-# --- 2. データ読み書きロジック ---
+# --- 2. 基本設定 ---
 user = st.session_state.current_user
-url = f"https://docs.google.com/spreadsheets/d/{USER_DATA[user]['id']}/edit#gid=0"
+sheet_id = USER_DATA[user]["id"]
+url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
 
 def load_data(sheet_name):
     try:
@@ -46,63 +47,63 @@ def save_entry(sheet_name, data_dict):
     df = load_data(sheet_name)
     new_row = pd.DataFrame([data_dict])
     if not df.empty and data_dict["日付"] in df["日付"].values:
-        df.update(df[df["日付"] == data_dict["日付"]].fillna(new_row.iloc[0]))
+        idx = df[df["日付"] == data_dict["日付"]].index[0]
+        for k, v in data_dict.items(): df.at[idx, k] = v
     else:
         df = pd.concat([df, new_row], ignore_index=True)
     conn.update(spreadsheet=url, worksheet=sheet_name, data=df.fillna(""))
     st.cache_data.clear()
 
-# --- 3. UI上部（月選択 & 検索窓） ---
-# ここで月選択の右側に検索窓を配置
+# --- 3. UI上部（ボタン配置） ---
+# 左から「Logout」「月選択」「データベースへアクセス」を並べる
 c1, c2, c3, c4 = st.columns([1, 1.5, 2, 1])
-with c1: st.write(f"### {user}")
+
+with c1:
+    if st.button("Logout", use_container_width=True):
+        st.session_state.logged_in = False
+        st.rerun()
+
 with c2:
     today = date.today()
     m_opts = [(today.replace(day=1) - pd.DateOffset(months=i)).strftime("%Y-%m") for i in range(12)]
     sel_month = st.selectbox("表示月", m_opts, label_visibility="collapsed")
-with c3:
-    # 検索窓の追加
-    search_q = st.text_input("🔍 メモを検索...", placeholder="検索ワードを入力", label_visibility="collapsed")
-with c4:
-    if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
-# --- 4. タブ & フォーム ---
+with c3:
+    # データベース（スプレッドシート）へのリンクボタン
+    st.link_button("📊 データベースへアクセス", url, use_container_width=True)
+
+with c4:
+    st.write(f"**{user}**")
+
+# --- 4. メインコンテンツ ---
 tabs = st.tabs(["🚶 体調記録", "⚖️ 体重"] + (["🩸 血圧"] if user == "克己" else []))
 
 with tabs[0]:
     df_main = load_data(sel_month)
-    # 入力フォーム
     if sel_month == today.strftime("%Y-%m"):
         with st.form("input_form"):
             col1, col2 = st.columns(2)
             with col1:
                 cond = st.slider("体調", 0, 10, 7)
-                diet = st.slider("食生活", 0, 10, 7) # 食生活の復元
+                diet = st.slider("食生活", 0, 10, 6)
             with col2:
                 slp = st.number_input("睡眠時間", 0.0, 24.0, 7.0)
                 perf = st.slider("総合実績", 0, 10, 5)
             memo = st.text_area("メモ")
-            if st.form_submit_button("保存"):
+            if st.form_submit_button("記録を保存", use_container_width=True):
                 save_entry(sel_month, {"日付": str(date.today()), "体調": cond, "食生活": diet, "睡眠時間": slp, "総合実績": perf, "メモ": memo})
                 st.rerun()
     
-    # グラフ表示
     if not df_main.empty:
         st.subheader("📈 トレンド")
-        # 数値計算用に変換
         plot_df = df_main.copy()
-        target_cols = ["体調", "食生活", "睡眠時間", "総合実績"]
-        for c in target_cols:
+        for c in ["体調", "食生活", "睡眠時間", "総合実績"]:
             if c in plot_df.columns: plot_df[c] = pd.to_numeric(plot_df[c], errors='coerce')
-        
-        m_df = plot_df.melt(id_vars=['日付'], value_vars=[c for c in target_cols if c in plot_df.columns]).dropna()
+        m_df = plot_df.melt(id_vars=['日付'], value_vars=[c for c in ["体調", "食生活", "睡眠時間", "総合実績"] if c in plot_df.columns]).dropna()
         st.altair_chart(alt.Chart(m_df).mark_line(point=True).encode(x='日付:N', y='value:Q', color='variable:N').properties(height=350), use_container_width=True)
 
-# --- 5. 履歴（検索対応） ---
+# 履歴表示
 st.divider()
 if not df_main.empty:
     st.subheader("📋 履歴一覧")
-    display_df = df_main.copy()
-    if search_q:
-        display_df = display_df[display_df['メモ'].str.contains(search_q, case=False, na=False)]
-    st.dataframe(display_df.sort_values("日付", ascending=False), use_container_width=True)
+    st.dataframe(df_main.sort_values("日付", ascending=False), use_container_width=True)
