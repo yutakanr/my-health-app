@@ -76,16 +76,23 @@ user = st.session_state.current_user
 sheet_id = USER_DATA[user]["id"]
 url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
 
-# ヘッダー
-c_l, c_c, c_r = st.columns([1.5, 2, 1.5])
-with c_l:
-    if st.button("🚪 Logout", use_container_width=True):
-        st.session_state.logged_in = False; st.rerun()
+# --- 4. UI上部（ヘッダー・検索機能） ---
+c_title, c_month, c_search, c_logout = st.columns([1.5, 1.5, 2, 1])
+
+with c_title:
     st.markdown(f"#### {'🐾 ' + user if user == 'テト' else '👋 ' + user + 'さん'}")
-with c_c:
+
+with c_month:
     today = date.today()
     month_opts = [(today.replace(day=1) - pd.DateOffset(months=i)).strftime("%Y-%m") for i in range(12)]
-    selected_month = st.selectbox("📅 表示月", month_opts, label_visibility="collapsed")
+    selected_month = st.selectbox("📅 月", month_opts, label_visibility="collapsed")
+
+with c_search:
+    search_query = st.text_input("🔍 メモを検索", placeholder="キーワードを入力...", label_visibility="collapsed")
+
+with c_logout:
+    if st.button("Logout", use_container_width=True):
+        st.session_state.logged_in = False; st.rerun()
 
 # タブ分け
 tabs = st.tabs(["🚶 体調記録", "🩸 血圧管理", "⚖️ 体重管理"] if user == "克己" else ["🚶 体調記録", "⚖️ 体重管理"])
@@ -129,10 +136,8 @@ with tabs[0]:
     
     if not df_main.empty:
         st.subheader("📈 トレンド")
-        # グラフに表示する数値項目を固定
         v_cols = [c for c in ["体調", "睡眠時間", "総合実績", "食生活", "寝つき", "寝起き", "水分補給"] if c in df_main.columns]
         if v_cols:
-            # 描画用にデータを整形（数値を確実にfloatに）
             plot_df = df_main.copy()
             for c in v_cols: plot_df[c] = pd.to_numeric(plot_df[c], errors='coerce')
             m_df = plot_df.melt(id_vars=['日付'], value_vars=v_cols).dropna()
@@ -151,15 +156,10 @@ if user == "克己":
                 save_entry(selected_month, {"日付": str(date.today()), "血圧上1": u1, "血圧下1": d1, "血圧上2": u2, "血圧下2": d2, "脈拍1": p1, "脈拍2": p2})
                 st.rerun()
         if not df_bp.empty:
-            st.subheader("📊 血圧推移")
-            b_c = [c for c in ["血圧上1", "血圧下1", "血圧上2", "血圧下2"] if c in df_bp.columns]
+            st.subheader("📊 血圧・脈拍")
+            b_c = [c for c in ["血圧上1", "血圧下1", "血圧上2", "血圧下2", "脈拍1", "脈拍2"] if c in df_bp.columns]
             m_b = df_bp.melt(id_vars=['日付'], value_vars=b_c).dropna()
-            st.altair_chart(alt.Chart(m_b).mark_line(point=True).encode(x='日付:N', y=alt.Y('value:Q', scale=alt.Scale(zero=False)), color='variable:N').properties(height=250), use_container_width=True)
-            
-            st.subheader("💓 脈拍トレンド")
-            p_c = [c for c in ["脈拍1", "脈拍2"] if c in df_bp.columns]
-            m_p = df_bp.melt(id_vars=['日付'], value_vars=p_c).dropna()
-            st.altair_chart(alt.Chart(m_p).mark_line(point=True).encode(x='日付:N', y=alt.Y('value:Q', scale=alt.Scale(zero=False)), color=alt.Color('variable:N', scale=alt.Scale(range=['#00CC96', '#AB63FA']))).properties(height=200), use_container_width=True)
+            st.altair_chart(alt.Chart(m_b).mark_line(point=True).encode(x='日付:N', y=alt.Y('value:Q', scale=alt.Scale(zero=False)), color='variable:N').properties(height=300), use_container_width=True)
 
 # --- タブ3: 体重 ---
 with tabs[-1]:
@@ -169,18 +169,18 @@ with tabs[-1]:
             if pw == "yawaranr": st.session_state.weight_auth = True; st.rerun()
     else:
         df_w = load_data(selected_month)
-        with st.form("w_form"):
-            w_def = 6.0 if user == "テト" else 60.0
-            weight = st.number_input("体重(kg)", 3.0, 150.0, w_def, step=0.1)
-            if st.form_submit_button("⚖️ 保存"):
-                save_entry(selected_month, {"日付": str(date.today()), "体重": weight})
-                st.rerun()
         if not df_w.empty and '体重' in df_w.columns:
             st.altair_chart(alt.Chart(df_w.dropna(subset=['体重'])).mark_line(point=True, color='orange').encode(x='日付:N', y=alt.Y('体重:Q', scale=alt.Scale(zero=False))).properties(height=300), use_container_width=True)
 
-# --- 4. 履歴表示 ---
+# --- 5. 履歴表示（検索フィルタ適用） ---
 st.divider()
 all_df = load_data(selected_month)
 if not all_df.empty:
-    st.subheader(f"📋 {selected_month} の全履歴")
-    st.dataframe(all_df.sort_values("日付", ascending=False), use_container_width=True)
+    display_df = all_df.copy()
+    if search_query:
+        # メモの内容で検索（大文字小文字を区別しない）
+        display_df = display_df[display_df['メモ'].str.contains(search_query, case=False, na=False)]
+        st.write(f"🔍 '{search_query}' の検索結果: {len(display_df)} 件")
+    
+    st.subheader(f"📋 {selected_month} の履歴")
+    st.dataframe(display_df.sort_values("日付", ascending=False), use_container_width=True)
