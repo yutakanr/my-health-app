@@ -42,7 +42,6 @@ if not st.session_state.logged_in:
 # --- 2. 共通ロジック ---
 user = st.session_state.current_user
 url = f"https://docs.google.com/spreadsheets/d/{USER_DATA[user]['id']}/edit#gid=0"
-cols_order = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "食生活", "行動意欲", "行動力", "総合実績", "メモ"]
 
 def load_data(sheet_name):
     try:
@@ -50,15 +49,15 @@ def load_data(sheet_name):
         if df is not None and not df.empty:
             df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
             return df.sort_values(['日付'], ascending=False).drop_duplicates(subset=['日付'], keep='last')
-        return pd.DataFrame(columns=cols_order)
-    except: return pd.DataFrame(columns=cols_order)
+        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def update_sheet(sheet_name, df):
     conn.update(spreadsheet=url, worksheet=sheet_name, data=df.fillna(""))
     st.cache_data.clear()
 
 # --- 3. UI上部 ---
-st.markdown(f"### {user}の体調管理画面")
+st.markdown(f"### {user}の管理画面")
 c_out, c_month, c_db, _ = st.columns([0.8, 1.2, 1.8, 5])
 with c_out:
     if st.button("Logout", use_container_width=True):
@@ -70,13 +69,35 @@ with c_month:
 with c_db:
     st.link_button("📊 DBアクセス", url, use_container_width=True)
 
-# --- 4. メイン ---
-tabs = st.tabs(["🚶 体調記録", "⚖️ 体重"] + (["🩸 血圧"] if user == "克己" else []))
+# --- 4. メインロジック（ユーザー判定） ---
 
-with tabs[0]:
+if user == "テト":
+    # 🐱 テト専用のシンプル画面
+    st.subheader("🐈 テトの体調管理")
+    df_teto = load_data(sel_month)
+    
+    with st.form("teto_form"):
+        t_weight = st.number_input("体重 (kg)", 0.0, 10.0, 4.0, 0.05)
+        t_eat = st.selectbox("ごはんの量", ["完食", "少し残した", "半分残した", "食べなかった"])
+        t_memo = st.text_area("メモ (体調など)")
+        if st.form_submit_button("テトの記録を保存"):
+            new_teto = {"日付": str(date.today()), "体重": t_weight, "ごはん": t_eat, "メモ": t_memo}
+            if not df_teto.empty and str(date.today()) in df_teto["日付"].values:
+                df_teto.loc[df_teto["日付"] == str(date.today()), list(new_teto.keys())] = list(new_teto.values())
+            else:
+                df_teto = pd.concat([df_teto, pd.DataFrame([new_teto])], ignore_index=True)
+            update_sheet(sel_month, df_teto)
+            st.rerun()
+    
+    if not df_teto.empty:
+        st.dataframe(df_teto.sort_values("日付", ascending=False), use_container_width=True)
+
+else:
+    # 👤 人間用の高機能画面
+    cols_order = ["日付", "起床時間", "就寝時間", "睡眠時間", "寝つき", "寝起き", "体調", "食生活", "行動意欲", "行動力", "総合実績", "メモ"]
     df_main = load_data(sel_month)
     
-    # 初期値
+    # 編集用初期値
     init = {"w_h":7, "w_m":0, "s_h":23, "s_m":0, "dur":7.0, "s1":7, "s2":7, "c":7, "d":6, "aw":5, "ap":5, "perf":5, "memo":""}
     if st.session_state.edit_target:
         row = df_main[df_main["日付"] == st.session_state.edit_target].iloc[0]
@@ -96,11 +117,10 @@ with tabs[0]:
             st.markdown("**【睡眠】**")
             cw1, cw2 = st.columns(2)
             w_h = cw1.selectbox("起床（時）", list(range(24)), index=init["w_h"])
-            w_m = cw2.selectbox("起床（分）", list(range(60)), index=init["w_m"])
+            w_m = cw2.selectbox("起床（分）", [f"{i:02d}" for i in range(60)], index=init["w_m"])
             cs1, cs2 = st.columns(2)
             s_h = cs1.selectbox("就寝（時）", list(range(24)), index=init["s_h"])
-            s_m = cs2.selectbox("就寝（分）", list(range(60)), index=init["s_m"])
-            
+            s_m = cs2.selectbox("就寝（分）", [f"{i:02d}" for i in range(60)], index=init["s_m"])
             dur = st.number_input("睡眠時間合計", 0.0, 24.0, float(init["dur"]), 0.1)
             s1 = st.slider("寝つき", 0, 10, int(init["s1"]))
             s2 = st.slider("寝起き", 0, 10, int(init["s2"]))
@@ -116,63 +136,48 @@ with tabs[0]:
         
         if st.form_submit_button("修正を保存" if st.session_state.edit_target else "記録を保存", use_container_width=True):
             t_date = st.session_state.edit_target if st.session_state.edit_target else str(date.today())
-            new_row = {
-                "日付": t_date, "起床時間": f"{w_h}:{w_m:02d}", "就寝時間": f"{s_h}:{s_m:02d}",
-                "睡眠時間": dur, "寝つき": s1, "寝起き": s2, "体調": c, "食生活": d,
-                "行動意欲": aw, "行動力": ap, "総合実績": perf, "メモ": memo
-            }
+            new_row = {"日付": t_date, "起床時間": f"{w_h}:{w_m}", "就寝時間": f"{s_h}:{s_m}", "睡眠時間": dur, "寝つき": s1, "寝起き": s2, "体調": c, "食生活": d, "行動意欲": aw, "行動力": ap, "総合実績": perf, "メモ": memo}
             if not df_main.empty and t_date in df_main["日付"].values:
                 df_main.loc[df_main["日付"] == t_date, list(new_row.keys())] = list(new_row.values())
             else:
                 df_main = pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True)
-            
             update_sheet(sel_month, df_main)
             st.session_state.edit_target = None
             st.rerun()
 
-    # --- 📈 グラフ（復元） ---
+    # --- 📈 グラフ ---
     if not df_main.empty:
         st.divider()
         st.subheader("📈 トレンド（主要4項目）")
         plot_items = ["総合実績", "食生活", "睡眠時間", "行動力"]
         p_df = df_main.copy()
-        for col in plot_items:
-            p_df[col] = pd.to_numeric(p_df[col], errors='coerce')
-        
+        for col in plot_items: p_df[col] = pd.to_numeric(p_df[col], errors='coerce')
         m_df = p_df.melt(id_vars=['日付'], value_vars=[col for col in plot_items if col in p_df.columns]).dropna()
-        chart = alt.Chart(m_df).mark_line(point=True).encode(
-            x='日付:N',
-            y='value:Q',
-            color='variable:N',
-            tooltip=['日付', 'variable', 'value']
-        ).properties(height=350).interactive()
+        chart = alt.Chart(m_df).mark_line(point=True).encode(x='日付:N', y='value:Q', color='variable:N').properties(height=350).interactive()
         st.altair_chart(chart, use_container_width=True)
 
-# --- 5. 履歴管理・削除・一覧 ---
-st.divider()
-if not df_main.empty:
-    st.subheader(f"📋 {sel_month} の履歴管理")
-    
-    # 削除用
-    if st.session_state.delete_target:
-        st.error(f"⚠️ {st.session_state.delete_target} のデータを削除しますか？")
-        dc1, dc2 = st.columns(2)
-        if dc1.button("削除を実行", use_container_width=True):
-            df_main = df_main[df_main["日付"] != st.session_state.delete_target]
-            update_sheet(sel_month, df_main)
-            st.session_state.delete_target = None; st.rerun()
-        if dc2.button("キャンセル", use_container_width=True):
-            st.session_state.delete_target = None; st.rerun()
+    # --- 履歴管理 ---
+    st.divider()
+    if not df_main.empty:
+        st.subheader(f"📋 {sel_month} の履歴管理")
+        if st.session_state.delete_target:
+            st.error(f"⚠️ {st.session_state.delete_target} を削除しますか？")
+            dc1, dc2 = st.columns(2)
+            if dc1.button("削除を実行"):
+                df_main = df_main[df_main["日付"] != st.session_state.delete_target]
+                update_sheet(sel_month, df_main)
+                st.session_state.delete_target = None; st.rerun()
+            if dc2.button("キャンセル"): st.session_state.delete_target = None; st.rerun()
 
-    op1, op2, _ = st.columns([3, 3, 4])
-    target_dates = df_main["日付"].tolist()
-    with op1:
-        e_date = st.selectbox("編集する日付", ["選択なし"] + target_dates)
-        if st.button("📝 編集モードにする", use_container_width=True):
-            if e_date != "選択なし": st.session_state.edit_target = e_date; st.rerun()
-    with op2:
-        d_date = st.selectbox("削除する日付", ["選択なし"] + target_dates)
-        if st.button("🗑️ 削除準備をする", use_container_width=True):
-            if d_date != "選択なし": st.session_state.delete_target = d_date; st.rerun()
+        op1, op2, _ = st.columns([3, 3, 4])
+        target_dates = df_main["日付"].tolist()
+        with op1:
+            e_date = st.selectbox("編集対象", ["選択なし"] + target_dates)
+            if st.button("📝 編集モード"):
+                if e_date != "選択なし": st.session_state.edit_target = e_date; st.rerun()
+        with op2:
+            d_date = st.selectbox("削除対象", ["選択なし"] + target_dates)
+            if st.button("🗑️ 削除準備"):
+                if d_date != "選択なし": st.session_state.delete_target = d_date; st.rerun()
 
-    st.dataframe(df_main[cols_order].sort_values("日付", ascending=False), use_container_width=True)
+        st.dataframe(df_main[cols_order].sort_values("日付", ascending=False), use_container_width=True)
