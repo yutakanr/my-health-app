@@ -1,7 +1,7 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date
 import altair as alt
 
 # --- 1. 設定 & ログイン ---
@@ -28,6 +28,7 @@ st.markdown("""
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "edit_target" not in st.session_state: st.session_state.edit_target = None
+if "delete_target" not in st.session_state: st.session_state.delete_target = None
 
 if not st.session_state.logged_in:
     st.title("🔐 Login")
@@ -50,7 +51,7 @@ def load_data(sheet_name):
         df = conn.read(spreadsheet=url, worksheet=sheet_name, ttl=0)
         if df is not None and not df.empty:
             df['日付'] = pd.to_datetime(df['日付']).dt.strftime('%Y-%m-%d')
-            return df.sort_values(['日付']).drop_duplicates(subset=['日付'], keep='last')
+            return df.sort_values(['日付'], ascending=False).drop_duplicates(subset=['日付'], keep='last')
         return pd.DataFrame(columns=cols_order)
     except: return pd.DataFrame(columns=cols_order)
 
@@ -78,86 +79,23 @@ with tabs[0]:
     df_main = load_data(sel_month)
     
     # 編集用初期値のセット
-    init_data = {"起床時間":7, "就寝時間":23, "睡眠時間":7.0, "寝つき":7, "寝起き":7, "体調":7, "食生活":6, "行動力":5, "行動意欲":5, "総合実績":5, "メモ":""}
+    init_val = {"wake_h":7, "wake_m":0, "sleep_h":23, "sleep_m":0, "dur":7.0, "s1":7, "s2":7, "c":7, "d":6, "ap":5, "aw":5, "perf":5, "memo":""}
     if st.session_state.edit_target:
         row = df_main[df_main["日付"] == st.session_state.edit_target].iloc[0]
-        for k in init_data.keys():
-            try:
-                if k in ["起床時間", "就寝時間"]: init_data[k] = int(row[k].split(":")[0])
-                else: init_data[k] = row[k]
-            except: pass
+        try:
+            init_val["wake_h"], init_val["wake_m"] = map(int, row["起床時間"].split(":"))
+            init_val["sleep_h"], init_val["sleep_m"] = map(int, row["就寝時間"].split(":"))
+            init_val["dur"], init_val["s1"], init_val["s2"], init_val["c"], init_val["d"], init_val["ap"], init_val["aw"], init_val["perf"], init_val["memo"] = row["睡眠時間"], row["寝つき"], row["寝起き"], row["体調"], row["食生活"], row["行動力"], row["行動意欲"], row["総合実績"], row["メモ"]
+        except: pass
 
     # 入力フォーム
-    st.subheader("🖋 記録を入力・編集" if st.session_state.edit_target else "🖋 今日の記録")
+    st.subheader("🖋 編集モード" if st.session_state.edit_target else "🖋 今日の記録")
     with st.form("input_form"):
         col_l, col_r = st.columns(2)
         with col_l:
-            wake_t = st.number_input("起床時間", 0, 23, init_data["起床時間"])
-            sleep_t = st.number_input("就寝時間", 0, 23, init_data["就寝時間"])
-            slp_dur = st.number_input("睡眠時間合計", 0.0, 24.0, float(init_data["睡眠時間"]), 0.5)
-            s_q1 = st.slider("寝つき", 0, 10, int(init_data["寝つき"]))
-            s_q2 = st.slider("寝起き", 0, 10, int(init_data["寝起き"]))
-        with col_r:
-            cond = st.slider("体調", 0, 10, int(init_data["体調"]))
-            diet = st.slider("食生活", 0, 10, int(init_data["食生活"]))
-            act_p = st.slider("行動力", 0, 10, int(init_data["行動力"]))
-            act_w = st.slider("行動意欲", 0, 10, int(init_data["行動意欲"]))
-        perf = st.slider("総合実績", 0, 10, int(init_data["総合実績"]))
-        memo = st.text_area("メモ", init_data["メモ"])
-        
-        btn_label = "修正を保存" if st.session_state.edit_target else "記録を保存"
-        if st.form_submit_button(btn_label, use_container_width=True):
-            target_date = st.session_state.edit_target if st.session_state.edit_target else str(date.today())
-            new_row = {"日付": target_date, "起床時間": f"{wake_t}:00", "就寝時間": f"{sleep_t}:00", "睡眠時間": slp_dur, "寝つき": s_q1, "寝起き": s_q2, "体調": cond, "食生活": diet, "行動力": act_p, "行動意欲": act_w, "総合実績": perf, "メモ": memo}
-            
-            # 保存処理
-            if not df_main.empty and target_date in df_main["日付"].values:
-                df_main.loc[df_main["日付"] == target_date, list(new_row.keys())] = list(new_row.values())
-            else:
-                df_main = pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True)
-            
-            update_sheet(sel_month, df_main)
-            st.session_state.edit_target = None
-            st.rerun()
-
-    if not df_main.empty:
-        # 📈 トレンド
-        st.subheader("📈 トレンド")
-        plot_items = ["総合実績", "食生活", "睡眠時間", "行動力"]
-        plot_df = df_main.copy()
-        for c in plot_items: plot_df[c] = pd.to_numeric(plot_df[c], errors='coerce')
-        m_df = plot_df.melt(id_vars=['日付'], value_vars=[c for c in plot_items if c in plot_df.columns]).dropna()
-        st.altair_chart(alt.Chart(m_df).mark_line(point=True).encode(x='日付:N', y='value:Q', color='variable:N').properties(height=300), use_container_width=True)
-
-        # 📊 週次サマリー
-        st.subheader("📊 直近7日間の平均")
-        recent_df = plot_df[pd.to_datetime(plot_df["日付"]) > (pd.Timestamp.now() - pd.Timedelta(days=7))]
-        if not recent_df.empty:
-            avg_cols = st.columns(4)
-            for i, item in enumerate(plot_items):
-                avg_val = recent_df[item].mean()
-                avg_cols[i].metric(item, f"{avg_val:.1f}")
-
-# --- 5. 履歴・編集・削除エリア ---
-st.divider()
-if not df_main.empty:
-    st.subheader(f"📋 {sel_month} の履歴")
-    # 削除用ダイアログ
-    if "delete_id" in st.session_state:
-        st.warning(f"⚠️ {st.session_state.delete_id} のデータを削除しますか？")
-        c1, c2 = st.columns(2)
-        if c1.button("はい、削除します"):
-            df_main = df_main[df_main["日付"] != st.session_state.delete_id]
-            update_sheet(sel_month, df_main)
-            del st.session_state.delete_id; st.rerun()
-        if c2.button("キャンセル"): del st.session_state.delete_id; st.rerun()
-
-    # 操作ボタン付きの表
-    for idx, row in df_main.sort_values("日付", ascending=False).iterrows():
-        with st.expander(f"📅 {row['日付']} - 体調:{row['体調']} / 実績:{row['総合実績']}"):
-            col_a, col_b, col_c = st.columns([4, 1, 1])
-            col_a.write(row.to_frame().T[cols_order])
-            if col_b.button("📝 編集", key=f"ed_{row['日付']}"):
-                st.session_state.edit_target = row['日付']; st.rerun()
-            if col_c.button("🗑️ 削除", key=f"del_{row['日付']}"):
-                st.session_state.delete_id = row['日付']; st.rerun()
+            st.write("**【睡眠】**")
+            c_w1, c_w2 = st.columns(2)
+            w_h = c_w1.number_input("起床（時）", 0, 23, init_val["wake_h"])
+            w_m = c_w2.number_input("起床（分）", 0, 59, init_val["wake_m"], step=5)
+            c_s1, c_s2 = st.columns(2)
+            s_h = c_s1.number_
